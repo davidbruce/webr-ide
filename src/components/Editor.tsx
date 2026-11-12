@@ -7,7 +7,7 @@ import { nb, setOutputMode, stopChunks, anyRunning, runsFor, inlinesFor, setDocP
 import { FileSource } from '../lib/grid/source';
 import { DataGrid } from './DataGrid';
 import { formatBytes } from '../lib/ui';
-import { downloadPath, isInstalling, rRoot } from '../lib/ide';
+import { downloadPath, isInstalling, phone, rRoot, showPane } from '../lib/ide';
 import * as fs from '../lib/opfs';
 import {
   registerEditor,
@@ -260,6 +260,7 @@ export function EditorPane() {
     }
     const dir = tab.path && fs.dirname(tab.path) ? `${rRoot()}/${fs.dirname(tab.path)}` : rRoot();
     setState('plotTab', 'preview');
+    showPane('plots');
     void renderDocument({ doc: model.uri.toString(), path: tab.path, name: tab.name, text: model.getValue(), dir, dark: isDark() });
   }
 
@@ -353,8 +354,14 @@ export function EditorPane() {
   }
 
   const api: EditorApi = {
-    openFile,
-    newFile,
+    async openFile(path, opts) {
+      await openFile(path, opts);
+      showPane('script');
+    },
+    newFile(name, content) {
+      newFile(name, content);
+      showPane('script');
+    },
     async saveActive() {
       if (tabs.active) await save(tabs.active);
     },
@@ -402,6 +409,7 @@ export function EditorPane() {
       }
     },
     insertText(text) {
+      showPane('script');
       const sel = ed?.getSelection();
       if (!ed || !sel || !ed.getModel()) {
         newFile(undefined, text);
@@ -473,6 +481,14 @@ export function EditorPane() {
     ed.addCommand(K.CtrlCmd | C.Digit2, () => consoleApi?.focus());
 
     createEffect(() => monaco.editor.setTheme(isDark() ? 'rstudio-dark' : 'rstudio-light'));
+    // Phones: a narrower gutter and slightly smaller text leave room for code.
+    createEffect(() =>
+      ed.updateOptions(
+        phone()
+          ? { fontSize: 13, lineHeight: 19, lineNumbersMinChars: 2, lineDecorationsWidth: 6, folding: false, glyphMargin: false }
+          : { fontSize: 14, lineHeight: 21, lineNumbersMinChars: 5, lineDecorationsWidth: 10, folding: true },
+      ),
+    );
     // Lock the editor while a package downloads/installs.
     createEffect(() => ed.updateOptions({ readOnly: isInstalling(), readOnlyMessage: { value: 'Editing is paused while a package installs.' } }));
   });

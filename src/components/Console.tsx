@@ -37,7 +37,20 @@ export function ConsolePane() {
   const write = (s: string) => term?.write(s);
   const nl = (s: string) => s.replace(/\r?\n/g, '\r\n');
 
+  /**
+   * Columns R should format output for. While the console is hidden (e.g.
+   * another tab on a phone) the terminal can't measure itself, so estimate
+   * from the window width and the console font.
+   */
   function cols() {
+    if (host && host.clientWidth === 0) {
+      const ctx = document.createElement('canvas').getContext('2d');
+      const style = getComputedStyle(host);
+      const size = parseFloat(style.getPropertyValue('--term-font-size')) || 13;
+      if (ctx) ctx.font = `${size}px ${style.getPropertyValue('--term-font-family') || 'monospace'}`;
+      const ch = ctx?.measureText('0').width || size * 0.6;
+      return Math.max(20, Math.floor((window.innerWidth - 28) / ch));
+    }
     return Math.max(10, term?.cols ?? 80);
   }
 
@@ -349,6 +362,13 @@ export function ConsolePane() {
     drawnRow = 0;
     drawLine();
   }
+
+  // Keep R's width in step while hidden (e.g. a phone rotating).
+  const onWinResize = () => {
+    if (host?.clientWidth === 0 && session.status === 'ready') session.evalVoid(`.ide_set_width(${cols()})`).catch(() => {});
+  };
+  window.addEventListener('resize', onWinResize);
+  onCleanup(() => window.removeEventListener('resize', onWinResize));
 
   onMount(async () => {
     term = new WTerm(host, {

@@ -2812,3 +2812,138 @@ body.resizing-row * {
 .storage-info td {
   word-break: break-word;
 }
+
+/* ---------------------------------------------------------------- phone layout */
+
+.workbench.phone {
+  padding: 4px 4px 0;
+}
+.workbench.phone .pane-zoom,
+.workbench.phone .gutter {
+  display: none;
+}
+/* Files tab: the sidebar fills the screen instead of the panes. */
+.workbench.phone .sidebar-wrap {
+  position: static;
+  flex: 1;
+  width: auto;
+  box-shadow: none;
+}
+.workbench.phone-files .quadrants {
+  display: none;
+}
+.workbench.phone .pane-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workbench.phone .pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+  .topbar .sidebar-toggle,
+  .topbar .brand,
+  .topbar .brand + .tb-sep {
+    display: none;
+  }
+  .topbar .tb-btn.labeled > span {
+    display: none;
+  }
+  .topbar .ws-name {
+    max-width: 9ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+.phone-tabs {
+  flex: none;
+  display: flex;
+  justify-content: space-around;
+  padding: 2px 4px max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-topbar);
+}
+.phone-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.phone-tab.active {
+  color: var(--accent);
+}
+.phone-tab-icon {
+  position: relative;
+  display: inline-flex;
+}
+.phone-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phone-badge {
+  position: absolute;
+  top: -2px;
+  right: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--bg-topbar);
+}
+.keyboard-open .phone-tabs {
+  display: none;
+}
+/* Landscape phones: a slimmer bar. */
+@media (max-height: 500px) and (pointer: coarse) {
+  .phone-tab {
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 4px 2px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+  /* Top bar: status as a dot only, and a shorter workspace button. */
+  .topbar .r-status > span:not(.dot) {
+    display: none;
+  }
+  .topbar .r-status {
+    padding: 0 8px;
+  }
+  .topbar .ws-btn {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .topbar {
+    gap: 2px;
+  }
+}
+/* Phones: toolbars scroll sideways instead of spilling over. */
+.workbench.phone .pane-toolbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workbench.phone .pane-toolbar::-webkit-scrollbar {
+  display: none;
+}
+.workbench.phone .pane-toolbar > * {
+  flex-shrink: 0;
+}
+@container (max-width: 420px) {
+  .pane-toolbar .tb-btn.labeled.run span {
+    display: none;
+  }
+}

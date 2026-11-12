@@ -1,5 +1,6 @@
-import { createSignal, onCleanup } from 'solid-js';
-import { state, setState, editor } from '../lib/ide';
+import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
+import { state, setState, editor, phone, showPane, PhoneTab } from '../lib/ide';
+import { Icon } from './Icon';
 import { EditorPane } from './Editor';
 import { ConsolePane } from './Console';
 import { EnvPane } from './EnvPane';
@@ -88,6 +89,16 @@ export function Workbench() {
   // On narrow (portrait) screens the sidebar starts closed and overlays the panes.
   if (narrow()) setState('sidebarOpen', false);
 
+  // Phones show one pane at a time (the bottom tabs pick which), using the
+  // same mechanism as zooming a pane; the Files tab shows the sidebar instead.
+  createEffect(
+    on([phone, () => state.phoneTab], ([isPhone, tab], prev) => {
+      if (isPhone) setState('zoomed', tab === 'files' ? 'script' : tab);
+      else if (prev?.[0]) setState('zoomed', null);
+    }),
+  );
+  const sidebarShown = () => (phone() ? state.phoneTab === 'files' : state.sidebarOpen);
+
   const z = () => state.zoomed;
   const leftVisible = () => !z() || z() === 'script' || z() === 'console';
   const rightVisible = () => !z() || z() === 'env' || z() === 'plots';
@@ -103,10 +114,10 @@ export function Workbench() {
   };
 
   return (
-    <div class="workbench" classList={{ narrow: narrow(), 'sidebar-open': state.sidebarOpen }}>
+    <div class="workbench" classList={{ narrow: narrow(), phone: phone(), 'phone-files': phone() && state.phoneTab === 'files', 'sidebar-open': sidebarShown() }}>
       <div
         class="sidebar-wrap"
-        classList={{ open: state.sidebarOpen }}
+        classList={{ open: sidebarShown() }}
         style={{ width: narrow() ? undefined : `${layout().sidebar}px` }}
       >
         <Sidebar />
@@ -119,7 +130,7 @@ export function Workbench() {
           onReset={() => setLayout({ sidebar: DEFAULT_LAYOUT.sidebar })}
         />
       )}
-      {state.sidebarOpen && narrow() && <div class="sidebar-scrim" onClick={() => setState('sidebarOpen', false)} />}
+      {state.sidebarOpen && narrow() && !phone() && <div class="sidebar-scrim" onClick={() => setState('sidebarOpen', false)} />}
 
       <div class="quadrants" ref={quad} style={colStyle()}>
         <div class="column" ref={leftCol} style={rowStyle(layout().leftTop, 'script', 'console')} classList={{ hidden: !leftVisible() }}>
@@ -170,5 +181,44 @@ export function Workbench() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- phone tab bar
+
+const PHONE_TABS: { id: PhoneTab; label: string; icon: string }[] = [
+  { id: 'files', label: 'Files', icon: 'folder' },
+  { id: 'script', label: 'Script', icon: 'file' },
+  { id: 'console', label: 'Console', icon: 'to-console' },
+  { id: 'env', label: 'Environment', icon: 'table' },
+  { id: 'plots', label: 'Plots', icon: 'image' },
+];
+
+/** Bottom tab bar on phones: one pane on screen at a time. */
+export function PhoneTabs() {
+  return (
+    <Show when={phone()}>
+      <nav class="phone-tabs" role="tablist" aria-label="Panes">
+        <For each={PHONE_TABS}>
+          {(t) => (
+            <button
+              role="tab"
+              class="phone-tab"
+              classList={{ active: state.phoneTab === t.id }}
+              aria-selected={state.phoneTab === t.id}
+              onClick={() => showPane(t.id)}
+            >
+              <span class="phone-tab-icon">
+                <Icon name={t.icon} size={22} />
+                <Show when={(t.id === 'console' || t.id === 'plots') && state.phoneBadges[t.id]}>
+                  <span class="phone-badge" aria-label="new output" />
+                </Show>
+              </span>
+              <span class="phone-tab-label">{t.label}</span>
+            </button>
+          )}
+        </For>
+      </nav>
+    </Show>
   );
 }

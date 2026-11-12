@@ -162,7 +162,7 @@ export function TopBar() {
   return (
     <header class="topbar">
       <button
-        class="tb-btn"
+        class="tb-btn sidebar-toggle"
         classList={{ active: state.sidebarOpen }}
         title="Toggle file sidebar"
         aria-pressed={state.sidebarOpen}

@@ -45,6 +45,16 @@ export interface EditorApi {
 
 export type PaneId = 'script' | 'console' | 'env' | 'plots';
 
+// ---------------------------------------------------------------- phone layout
+
+/** Tabs of the phone layout: one pane on screen at a time. */
+export type PhoneTab = 'files' | PaneId;
+const phoneQuery = window.matchMedia('(max-width: 600px), (max-height: 500px) and (pointer: coarse)');
+const [phone, setPhone] = createSignal(phoneQuery.matches);
+phoneQuery.addEventListener('change', () => setPhone(phoneQuery.matches));
+/** True on phone-sized screens, where panes are shown one at a time. */
+export { phone };
+
 /**
  * True while a package is downloading/installing. Stays on briefly between
  * packages (dependencies install one after another) to avoid flicker.
@@ -108,7 +118,25 @@ const [state, setState] = createStore({
   attaching: false,
   /** Package installs in progress (from markers emitted by webR's installer). */
   installs: { current: null as null | { pkg: string; version: string }, done: [] as string[] },
+  /** Phone layout: the pane on screen, and tabs with output not yet seen. */
+  phoneTab: 'script' as PhoneTab,
+  phoneBadges: { console: false, plots: false } as Record<'console' | 'plots', boolean>,
 });
+
+/** On phones, bring a pane on screen (no-op on larger screens). */
+export function showPane(tab: PhoneTab) {
+  if (!phone()) return;
+  batch(() => {
+    setState('phoneTab', tab);
+    if (tab === 'console' || tab === 'plots') setState('phoneBadges', tab, false);
+  });
+}
+
+// Only output that follows something the user ran counts (not R's banner).
+let badgesArmed = false;
+function badge(tab: 'console' | 'plots') {
+  if (badgesArmed && phone() && state.phoneTab !== tab && !state.phoneBadges[tab]) setState('phoneBadges', tab, true);
+}
 export { state, setState };
 
 export const [view, setView] = createSignal<null | { title: string; data: Record<string, unknown[]> }>(null);
@@ -167,12 +195,23 @@ session.on((ev) => {
       break;
     case 'submitted':
       addHistory(ev.line);
+      badgesArmed = true;
+      // Code run from the editor, files, environment or history: show its output.
+      showPane('console');
+      break;
+    case 'stdout':
+    case 'stderr':
+      badge('console');
+      break;
+    case 'canvasNewPage':
+      badge('plots');
       break;
     case 'pager':
       batch(() => {
         setState('help', { title: ev.title, text: ev.text });
         setState('plotTab', 'help');
       });
+      showPane('plots');
       break;
     case 'view':
       setView({ title: ev.title, data: ev.data });

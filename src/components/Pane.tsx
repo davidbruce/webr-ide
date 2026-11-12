@@ -44,7 +44,7 @@ export function PaneHeader(props: {
         {props.actions}
         {props.extraZoom}
         <button
-          class="tb-btn"
+          class="tb-btn pane-zoom"
           title={zoomed() ? 'Restore layout' : 'Zoom pane'}
           onClick={() => setState('zoomed', zoomed() ? null : props.pane)}
         >

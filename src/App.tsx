@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { TopBar } from './components/TopBar';
-import { Workbench } from './components/Workbench';
+import { PhoneTabs, Workbench } from './components/Workbench';
 import { Modals } from './components/Modals';
 import { PresenterView } from './components/Presenter';
 import { StorageBanner, StorageInfo } from './components/StorageInfo';
@@ -60,6 +60,8 @@ export function App() {
   if (vv) {
     const fit = () => {
       document.documentElement.style.setProperty('--app-height', `${vv.height}px`);
+      // On-screen keyboard up: the phone tab bar steps aside to save space.
+      document.documentElement.classList.toggle('keyboard-open', window.innerHeight - vv.height > 120);
       if (vv.offsetTop) window.scrollTo(0, 0);
     };
     vv.addEventListener('resize', fit);
@@ -89,6 +91,7 @@ export function App() {
       <div class="app">
         <TopBar />
         <Workbench />
+        <PhoneTabs />
         <Modals />
         <PresenterView />
         <StorageInfo />
