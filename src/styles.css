@@ -2947,3 +2947,17 @@ body.resizing-row * {
     display: none;
   }
 }
+
+/* iOS Safari zooms the page when a text field under 16px gets focus. Keep
+   every text field (including Monaco's and the console's hidden ones, which
+   receive the typing) at 16px on touch screens. The hidden ones are
+   invisible, so only visible inputs change size. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  textarea,
+  select,
+  .monaco-editor textarea.inputarea,
+  .monaco-editor .native-edit-context {
+    font-size: 16px !important;
+  }
+}
