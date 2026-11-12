@@ -7,6 +7,8 @@ import { rString } from '../lib/r-session';
 import { askText, formatBytes, toast } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
+import { OutputPane } from './Notebook';
+import { PreviewPane } from './Preview';
 
 // ---------------------------------------------------------------- plot history
 
@@ -126,14 +128,22 @@ export function PlotsPane() {
         pane="plots"
         tabs={[
           { id: 'plots', label: 'Plots' },
+          { id: 'output', label: 'Output' },
+          { id: 'preview', label: 'Preview' },
           { id: 'packages', label: 'Packages' },
           { id: 'help', label: 'Help' },
         ]}
         active={state.plotTab}
-        onTab={(id) => setState('plotTab', id as 'plots' | 'packages' | 'help')}
+        onTab={(id) => setState('plotTab', id as 'plots' | 'output' | 'preview' | 'packages' | 'help')}
       />
       <Show when={state.plotTab === 'plots'}>
         <PlotsView />
+      </Show>
+      <Show when={state.plotTab === 'output'}>
+        <OutputPane />
+      </Show>
+      <Show when={state.plotTab === 'preview'}>
+        <PreviewPane />
       </Show>
       <Show when={state.plotTab === 'packages'}>
         <PackagesView />

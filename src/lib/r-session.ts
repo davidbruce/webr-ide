@@ -1,5 +1,6 @@
 import { WebR, ChannelType } from 'webr';
 import { R_HELPERS } from './r-helpers';
+import { R_NOTEBOOK } from './r-notebook';
 import { WEBR_BASE_URL, mountBaseLibrary } from './webr-runtime';
 
 export type SessionEvent =
@@ -17,7 +18,12 @@ export type SessionEvent =
   | { type: 'submitted'; line: string }
   | { type: 'install'; phase: 'start' | 'end'; pkg: string; version: string };
 
-export type SessionStatus = 'starting' | 'ready' | 'error' | 'closed';
+export interface ChunkResult {
+  items: { type: 'stdout' | 'message' | 'warning' | 'error' | 'plot' | 'table' | 'widget'; text: string }[];
+  images: ImageBitmap[];
+}
+
+export type SessionStatus ='starting' | 'ready' | 'error' | 'closed';
 
 type Listener = (ev: SessionEvent) => void;
 
@@ -103,6 +109,7 @@ export class RSession {
       const base = await mountBaseLibrary(this.webR);
       if (base.failed.length) console.warn('base library: some parts failed to load', base.failed);
       await this.webR.evalRVoid(R_HELPERS);
+      await this.webR.evalRVoid(R_NOTEBOOK);
       await this.setPlotSize(plotSize.width, plotSize.height);
       if (onInit) {
         try {
@@ -279,6 +286,81 @@ export class RSession {
     }
   }
 
+  /**
+   * Run a notebook chunk outside the console and return its output in order.
+   * Plots are captured at `width`×`height` CSS pixels (rendered at 2×).
+   * Chunks run one at a time; R also finishes any console work first.
+   */
+  runChunk(code: string, opts: { width: number; height: number; chars: number }): Promise<ChunkResult> {
+    return this.queued(async () => {
+      const shelter = await new this.webR.Shelter();
+      try {
+        const res = await shelter.captureR(`.ide_chunk(${rString(code)}, ${Math.round(opts.chars)}L)`, {
+          captureGraphics: { width: Math.round(opts.width), height: Math.round(opts.height), bg: 'white' },
+          // stdout is captured by .ide_chunk itself; stderr (incl. the package
+          // installer's progress markers) keeps flowing to the console.
+          captureStreams: false,
+          captureConditions: false,
+        });
+        const flat = await strings(res.result);
+        const items: ChunkResult['items'] = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) items.push({ type: flat[i] as ChunkResult['items'][number]['type'], text: flat[i + 1] });
+        return { items, images: res.images as ImageBitmap[] };
+      } finally {
+        void shelter.purge();
+      }
+    });
+  }
+
+  /** Evaluate an inline `r` expression: [ok, text]. */
+  inlineValue(code: string): Promise<{ ok: boolean; text: string }> {
+    return this.queued(async () => {
+      const r = await this.webR.evalRString(`.ide_inline(${rString(code)})`);
+      const [kind, ...rest] = r.split('\x1f');
+      return { ok: kind === 'ok', text: rest.join(' ') };
+    });
+  }
+
+  /** Knit a Quarto / R Markdown document (run in `dir`) and convert it to HTML. */
+  renderDocument(text: string, dir: string): Promise<string[]> {
+    return this.queued(async () => {
+      const shelter = await new this.webR.Shelter();
+      try {
+        const res = await shelter.captureR(`.ide_render(${rString(text)}, ${rString(dir)})`, {
+          captureGraphics: false,
+          captureStreams: false,
+          captureConditions: false,
+        });
+        return await strings(res.result);
+      } finally {
+        void shelter.purge();
+      }
+    });
+  }
+
+  /**
+   * Run notebook work outside the console, one job at a time (R also
+   * finishes any console work first), reporting busy/idle like the console.
+   */
+  private queued<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.jobTail.then(async () => {
+      if (this.status !== 'ready') throw new Error('R is not running');
+      const gen = this.generation;
+      this.emit({ type: 'busy', busy: true });
+      try {
+        return await job();
+      } finally {
+        if (gen === this.generation && this.status === 'ready') {
+          this.emit({ type: 'busy', busy: !this.atPrompt });
+          if (this.idle) this.emit({ type: 'idle' });
+        }
+      }
+    });
+    this.jobTail = run.catch(() => {});
+    return run;
+  }
+  private jobTail: Promise<unknown> = Promise.resolve();
+
   // ---------- helpers that query R without touching the console ----------
 
   async strings(code: string): Promise<string[]> {
@@ -288,6 +370,11 @@ export class RSession {
   async evalVoid(code: string): Promise<void> {
     await this.webR.evalRVoid(code);
   }
+}
+
+async function strings(obj: unknown): Promise<string[]> {
+  const arr = (await (obj as { toArray(): Promise<(string | null)[]> }).toArray()) ?? [];
+  return arr.map((s) => s ?? '');
 }
 
 /** Quote a JS string as an R string literal. */

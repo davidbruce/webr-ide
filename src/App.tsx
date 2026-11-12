@@ -2,6 +2,8 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { TopBar } from './components/TopBar';
 import { Workbench } from './components/Workbench';
 import { Modals } from './components/Modals';
+import { PresenterView } from './components/Presenter';
+import { StorageBanner, StorageInfo } from './components/StorageInfo';
 import { PackageBrowser } from './components/PackageBrowser';
 import { consoleApi } from './components/Console';
 import { editor, initWorkspaces, openWorkspaceUI, setState, startR, state, restartR } from './lib/ide';
@@ -18,11 +20,8 @@ export function App() {
   });
 
   onMount(async () => {
-    if ((await initStorage()) === 'memory') {
-      toast('Browser storage is unavailable (private browsing?). Files will be lost when you close this tab.', 'warn', 8000);
-    } else {
-      void requestPersistence();
-    }
+    // A failure shows a lasting banner (StorageBanner) with the reason.
+    if ((await initStorage()) === 'opfs') void requestPersistence();
     try {
       const ws = await initWorkspaces();
       await openWorkspaceUI(ws);
@@ -39,7 +38,7 @@ export function App() {
     if (mod && !e.shiftKey && e.key.toLowerCase() === 's') {
       e.preventDefault();
       void editor()?.saveActive();
-    } else if (mod && e.altKey && e.key.toLowerCase() === 'n') {
+    } else if (mod && e.altKey && e.code === 'KeyN') {
       e.preventDefault();
       editor()?.newFile();
     } else if (e.ctrlKey && e.key === '2') {
@@ -91,6 +90,9 @@ export function App() {
         <TopBar />
         <Workbench />
         <Modals />
+        <PresenterView />
+        <StorageInfo />
+        <StorageBanner />
         <PackageBrowser />
       </div>
     </Show>

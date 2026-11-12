@@ -11,6 +11,8 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+import { createSignal } from 'solid-js';
+
 export const IDE_DIR = '.ide';
 const WS_ROOT = 'workspaces';
 
@@ -65,19 +67,96 @@ export function isMemoryMode() {
   return memoryMode;
 }
 
-/** Probe OPFS; fall back to memory (e.g. some private-browsing modes). */
+/** Why files can't be saved (null when storage works). */
+const [storageIssue, setStorageIssue] = createSignal<string | null>(null);
+export { storageIssue };
+
+/** The startup check's result, for the storage details dialog. */
+export let probeResult = 'not run';
+
+/**
+ * Check that files can really be saved: write, read back and delete a test
+ * file through the same path normal saves use. If anything fails, files are
+ * kept in memory for this page only, and storageIssue() says why.
+ */
 export async function initStorage(): Promise<'opfs' | 'memory'> {
+  const fail = (reason: string, e?: unknown) => {
+    console.warn('Browser storage unavailable, using memory:', reason, e);
+    probeResult = `failed: ${e ? String((e as Error)?.message ?? e) : reason}`;
+    memoryMode = true;
+    setStorageIssue(reason);
+    return 'memory' as const;
+  };
+  if (typeof isSecureContext !== 'undefined' && !isSecureContext) {
+    return fail(
+      `This page was opened over an insecure connection (${location.protocol}//${location.host}), and browsers only allow saving files on https:// addresses or localhost. Open the https:// address instead.`,
+    );
+  }
+  if (!opfsSupported()) {
+    return fail('This browser does not support the private file storage the IDE needs (Safari 15.2 / iOS 15.2 or newer, or a recent Chrome or Firefox).');
+  }
+  let root: FileSystemDirectoryHandle;
   try {
-    if (!opfsSupported()) throw new Error('OPFS unsupported');
-    const root = await navigator.storage.getDirectory();
-    const probe = await root.getDirectoryHandle(WS_ROOT, { create: true });
-    for await (const _ of entries(probe)) break;
+    root = await navigator.storage.getDirectory();
+  } catch (e) {
+    return fail(
+      'The browser refused file storage. This happens in Private Browsing, or when website data is blocked (on iPhone/iPad: Settings → Apps → Safari → turn off "Block All Cookies").',
+      e,
+    );
+  }
+  try {
+    await root.getDirectoryHandle(WS_ROOT, { create: true });
+    const dir = await root.getDirectoryHandle('.probe', { create: true });
+    const text = `probe ${Date.now()}`;
+    const fh = await dir.getFileHandle('probe.txt', { create: true });
+    if (typeof (fh as any).createWritable === 'function') {
+      const w = await (fh as any).createWritable();
+      await w.write(new TextEncoder().encode(text));
+      await w.close();
+    } else {
+      await writeViaWorker(['.probe', 'probe.txt'], new TextEncoder().encode(text));
+    }
+    const back = await (await fh.getFile()).text();
+    await root.removeEntry('.probe', { recursive: true }).catch(() => {});
+    if (back !== text) throw new Error(`read back ${JSON.stringify(back.slice(0, 40))}`);
+    probeResult = `ok (${typeof (fh as any).createWritable === 'function' ? 'createWritable' : 'worker sync access handle'})`;
     return 'opfs';
   } catch (e) {
-    console.warn('OPFS unavailable, using in-memory storage:', e);
-    memoryMode = true;
-    return 'memory';
+    return fail('Saving a test file failed, so files are only kept until the page is closed or reloaded.', e);
   }
+}
+
+/** What the browser supports, for diagnosing storage problems. */
+export async function storageDiagnostics(): Promise<[string, string][]> {
+  const yes = (b: unknown) => (b ? 'yes' : 'no');
+  const rows: [string, string][] = [
+    ['Address', location.origin],
+    ['Secure context (https/localhost)', yes(globalThis.isSecureContext)],
+    ['File storage (OPFS)', yes(opfsSupported())],
+    ['Startup save test', probeResult],
+    ['Mode', memoryMode ? 'memory only (lost on reload)' : 'saved in the browser'],
+  ];
+  try {
+    rows.push(['Persistent (not auto-cleared)', yes(await navigator.storage?.persisted?.())]);
+  } catch {
+    rows.push(['Persistent (not auto-cleared)', 'unknown']);
+  }
+  const est = await storageEstimate();
+  rows.push(['Usage / quota', est ? `${(est.usage / 1048576).toFixed(1)} MB / ${(est.quota / 1048576).toFixed(0)} MB` : 'unknown']);
+  let ls = 'no';
+  try {
+    localStorage.setItem('webr-ide:probe', '1');
+    ls = localStorage.getItem('webr-ide:probe') === '1' ? 'yes' : 'no';
+    localStorage.removeItem('webr-ide:probe');
+  } catch (e) {
+    ls = `no (${(e as Error)?.name ?? e})`;
+  }
+  rows.push(['localStorage', ls]);
+  rows.push(['Service worker', 'serviceWorker' in navigator ? (navigator.serviceWorker.controller ? 'active' : 'supported, not active') : 'not supported']);
+  rows.push(['Cross-origin isolated', yes(globalThis.crossOriginIsolated)]);
+  rows.push(['Installed (home screen)', yes(matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone)]);
+  rows.push(['Browser', navigator.userAgent]);
+  return rows;
 }
 
 async function rootDir(): Promise<FileSystemDirectoryHandle> {
@@ -272,11 +351,24 @@ function writeViaWorker(segments: string[], data: Uint8Array): Promise<void> {
       pending.delete(ev.data.id);
       ev.data.ok ? p.resolve() : p.reject(new Error(ev.data.error));
     };
+    // A worker that fails to load must not leave saves waiting forever.
+    worker.onerror = (ev) => {
+      const err = new Error(`file writer failed to start: ${ev.message || 'worker error'}`);
+      for (const p of pending.values()) p.reject(err);
+      pending.clear();
+      worker = null;
+    };
   }
   const id = ++reqId;
   const buf = data.slice().buffer;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      if (pending.delete(id)) reject(new Error('file write timed out'));
+    }, 20000);
+    pending.set(id, {
+      resolve: () => (clearTimeout(timer), resolve()),
+      reject: (e) => (clearTimeout(timer), reject(e)),
+    });
     worker!.postMessage({ id, segments, data: buf }, [buf]);
   });
 }

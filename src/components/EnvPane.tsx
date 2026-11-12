@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { state, setState, refreshEnv, strOf, session, saveEnvironmentImage, clearHistory, editor, EnvEntry } from '../lib/ide';
-import { confirmDialog, modKey } from '../lib/ui';
+import { confirmDialog, kbd, isMac } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
@@ -234,7 +234,7 @@ function HistoryView() {
                   classList={{ selected: selected().has(x.i) }}
                   onClick={(e) => toggle(x.i, e.metaKey || e.ctrlKey || e.shiftKey || touchUI)}
                   onDblClick={() => consoleApi?.insert(x.cmd)}
-                  title={`Double-click to send to console · ${modKey}-click to multi-select`}
+                  title={`Double-click to send to console · ${isMac ? '⌘' : 'Ctrl'}-click to multi-select`}
                 >
                   {x.cmd}
                 </li>

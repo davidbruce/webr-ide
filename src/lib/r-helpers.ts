@@ -227,6 +227,97 @@ local({
     setwd("/home/web_user")
     invisible(NULL)
   }
+
+  # Run one notebook chunk in the global environment, the way the console
+  # would (auto-printing visible values), and return its output as a flat
+  # character vector of (type, text) pairs in the order it happened:
+  #   stdout / message / warning / error, and "plot" with the page number of
+  #   the image captured for it (pages come back from captureR in order).
+  e$.ide_chunk <- function(code, width = 80L) {
+    out <- character()
+    add <- function(type, text) out <<- c(out, type, text)
+    # Output goes to ide_buf; closing the connection also flushes a final
+    # line that has no newline yet.
+    ide_buf <- character()
+    con <- textConnection("ide_buf", "w", local = TRUE)
+    open_con <- TRUE
+    used <- 0L
+    flush_out <- function() {
+      lines <- if (open_con) textConnectionValue(con) else ide_buf
+      if (length(lines) > used) {
+        add("stdout", paste(lines[(used + 1L):length(lines)], collapse = "\n"))
+        used <<- length(lines)
+      }
+    }
+    page <- 0L
+    newpage <- function() {
+      flush_out()
+      page <<- page + 1L
+      add("plot", as.character(page))
+    }
+    top <- quote(eval(ex, globalenv()))
+    where <- function(call) if (is.null(call) || identical(call, top)) "" else paste0(" in ", paste(deparse(call, nlines = 1L), collapse = ""))
+    old_base <- getHook("before.plot.new")
+    old_grid <- getHook("before.grid.newpage")
+    setHook("before.plot.new", function(...) if (isTRUE(graphics::par("page"))) newpage(), "replace")
+    setHook("before.grid.newpage", function(...) newpage(), "replace")
+    op <- options(width = max(20L, min(as.integer(width), 250L)))
+    sinks <- sink.number()
+    sink(con)
+    cleanup <- function() {
+      while (sink.number() > sinks) sink()
+      if (open_con) {
+        close(con)
+        open_con <<- FALSE
+      }
+      flush_out()
+      options(op)
+      setHook("before.plot.new", old_base, "replace")
+      setHook("before.grid.newpage", old_grid, "replace")
+    }
+    on.exit(if (open_con) cleanup())
+    exprs <- tryCatch(parse(text = code, keep.source = FALSE), error = function(err) err)
+    if (inherits(exprs, "error")) {
+      add("error", paste0("Error: ", conditionMessage(exprs)))
+      return(out)
+    }
+    for (ex in exprs) {
+      ok <- withCallingHandlers(
+        tryCatch({
+          v <- withVisible(eval(ex, globalenv()))
+          if (v$visible) {
+            # Data frames and HTML widgets get rich output; everything else prints.
+            rich <- tryCatch(.ide_rich(v$value), error = function(err) NULL)
+            if (!is.null(rich)) {
+              flush_out()
+              add(rich[[1]], rich[[2]])
+            } else if (isS4(v$value)) methods::show(v$value) else print(v$value)
+          }
+          TRUE
+        }, error = function(err) {
+          flush_out()
+          add("error", paste0("Error", where(conditionCall(err)), ": ", conditionMessage(err)))
+          FALSE
+        }, interrupt = function(i) {
+          flush_out()
+          add("error", "Interrupted")
+          FALSE
+        }),
+        message = function(m) {
+          flush_out()
+          add("message", sub("\n$", "", conditionMessage(m)))
+          invokeRestart("muffleMessage")
+        },
+        warning = function(w) {
+          flush_out()
+          add("warning", paste0("Warning", where(conditionCall(w)), ": ", conditionMessage(w)))
+          invokeRestart("muffleWarning")
+        })
+      if (!ok) break
+    }
+    cleanup()
+    out
+  }
 })
 
 options(menu.graphics = FALSE, help_type = "text", max.print = 2000)

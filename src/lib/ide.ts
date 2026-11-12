@@ -39,6 +39,8 @@ export interface EditorApi {
   closeAll(force?: boolean): Promise<boolean>;
   hasDirty(): boolean;
   layout(): void;
+  /** Render the active Quarto / R Markdown document into the Preview tab. */
+  renderActive?(): void;
 }
 
 export type PaneId = 'script' | 'console' | 'env' | 'plots';
@@ -93,7 +95,7 @@ const [state, setState] = createStore({
   packages: [] as PackageEntry[],
   help: null as null | { title: string; text: string },
   envTab: 'environment' as 'environment' | 'history',
-  plotTab: 'plots' as 'plots' | 'packages' | 'help',
+  plotTab: 'plots' as 'plots' | 'output' | 'preview' | 'packages' | 'help',
   zoomed: null as PaneId | null,
   sidebarOpen: true,
   switching: false,
@@ -398,7 +400,9 @@ async function prepareDrive() {
 
 /** Mount the workspace straight from OPFS. Returns false to fall back to copying. */
 async function tryMountDrive(ws: string, root: string): Promise<boolean> {
-  if (!driveSwOk || driveUsable === false || session.status !== 'ready') return false;
+  // The drive reads OPFS directly; without working storage the page keeps
+  // files in memory, so R must use the copied (mirror) workspace instead.
+  if (fs.isMemoryMode() || !driveSwOk || driveUsable === false || session.status !== 'ready') return false;
   try {
     await session.evalVoid(`.ide_mkdirs(${rString(root)})`);
     await mountDrive(session.webR, ws, root);

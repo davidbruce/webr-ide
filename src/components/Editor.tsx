@@ -1,10 +1,13 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { monaco, languageFor, statementEnd, isTabularName, TEXT_VIEW_MAX, GRID_MAX, extOf } from '../lib/monaco';
+import { monaco, languageFor, statementEnd, isTabularName, TEXT_VIEW_MAX, GRID_MAX, extOf, inRChunk } from '../lib/monaco';
+import { attachNotebook, type NotebookControls } from './Notebook';
+import { preview, renderDocument } from '../lib/render';
+import { nb, setOutputMode, stopChunks, anyRunning, runsFor, inlinesFor, setDocPath, moveSavedOutput } from '../lib/notebook';
 import { FileSource } from '../lib/grid/source';
 import { DataGrid } from './DataGrid';
 import { formatBytes } from '../lib/ui';
-import { downloadPath, isInstalling } from '../lib/ide';
+import { downloadPath, isInstalling, rRoot } from '../lib/ide';
 import * as fs from '../lib/opfs';
 import {
   registerEditor,
@@ -17,7 +20,7 @@ import {
   setState,
 } from '../lib/ide';
 import { rString } from '../lib/r-session';
-import { askText, choiceDialog, isDark, modKey, toast } from '../lib/ui';
+import { askText, choiceDialog, isDark, kbd, toast } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
@@ -36,6 +39,7 @@ interface Tab {
 export function EditorPane() {
   let host!: HTMLDivElement;
   let ed: monaco.editor.IStandaloneCodeEditor;
+  let notebook: NotebookControls | undefined;
   const [tabs, setTabs] = createStore<{ list: Tab[]; active: string | null }>({ list: [], active: null });
   const models = new Map<string, monaco.editor.ITextModel>();
   const savedVersion = new Map<string, number>();
@@ -45,6 +49,7 @@ export function EditorPane() {
 
   const activeTab = () => tabs.list.find((t) => t.key === tabs.active) ?? null;
   const isR = () => activeTab()?.language === 'r';
+  const isNb = () => activeTab()?.language === 'quarto';
   const isTabular = () => !!activeTab() && isTabularName(activeTab()!.name);
   const inGrid = () => activeTab()?.mode === 'grid';
 
@@ -101,7 +106,8 @@ export function EditorPane() {
       return;
     }
     const text = await file.text();
-    const { key, language } = createModel(text, name);
+    const { key, language, model } = createModel(text, name);
+    setDocPath(model.uri.toString(), state.workspace, path);
     setTabs('list', (l) => [...l, { key, path, name, dirty: false, language, mode: tabular && opts.grid ? 'grid' : 'text', gridOnly: false, fileVersion: 0 }]);
     activate(key);
   }
@@ -133,6 +139,9 @@ export function EditorPane() {
       const version = model.getAlternativeVersionId();
       await writeWorkspaceFile(path, model.getValue());
       savedVersion.set(key, version);
+      setDocPath(model.uri.toString(), state.workspace, path);
+      // Like quarto preview: re-render on save while this document is previewed.
+      if (preview.doc === model.uri.toString() && preview.status !== 'rendering' && tabs.active === key) queueMicrotask(renderActive);
       const i = tabs.list.findIndex((t) => t.key === key);
       const name = fs.basename(path);
       const language = languageFor(name);
@@ -195,6 +204,12 @@ export function EditorPane() {
       submitCode(model.getValueInRange(sel));
       return;
     }
+    // In Quarto / R Markdown, only lines inside R chunks are code; on other
+    // lines, ⌘↩ / Ctrl+Enter evaluates inline `r` code.
+    if (model.getLanguageId() === 'quarto' && !inRChunk(model, sel.startLineNumber)) {
+      notebook?.runInlineAtCursor();
+      return;
+    }
     const n = model.getLineCount();
     let start = sel.startLineNumber;
     // On a blank/comment line, RStudio runs the next statement.
@@ -230,6 +245,22 @@ export function EditorPane() {
     }
     if (tab.dirty && !(await save(tab.key))) return;
     submitCode(`source(${rString(rDisplayPath(tab.path))}${echo ? ', echo = TRUE' : ''})`);
+  }
+
+  function renderActive() {
+    const tab = activeTab();
+    const model = tab && models.get(tab.key);
+    if (!tab || !model || tab.language !== 'quarto') {
+      toast('Open a Quarto (.qmd) or R Markdown (.Rmd) document to render it', 'warn');
+      return;
+    }
+    if (state.rStatus !== 'ready') {
+      toast('R is still starting…', 'warn');
+      return;
+    }
+    const dir = tab.path && fs.dirname(tab.path) ? `${rRoot()}/${fs.dirname(tab.path)}` : rRoot();
+    setState('plotTab', 'preview');
+    void renderDocument({ doc: model.uri.toString(), path: tab.path, name: tab.name, text: model.getValue(), dir, dark: isDark() });
   }
 
   async function reloadIfOpen(path: string) {
@@ -334,6 +365,12 @@ export function EditorPane() {
     sourceActive,
     reloadIfOpen,
     onRenamed(from, to) {
+      void moveSavedOutput(state.workspace, from, to).then(() => {
+        for (const t of tabs.list) {
+          const m = models.get(t.key);
+          if (m && t.path) setDocPath(m.uri.toString(), state.workspace, t.path);
+        }
+      });
       setTabs(
         'list',
         produce((list) => {
@@ -354,6 +391,7 @@ export function EditorPane() {
       scheduleIdeStateSave();
     },
     onDeleted(path) {
+      void moveSavedOutput(state.workspace, path, null);
       for (const t of [...tabs.list]) {
         if (t.path === path || t.path?.startsWith(path + '/')) {
           if (t.dirty) {
@@ -389,6 +427,7 @@ export function EditorPane() {
       return true;
     },
     hasDirty: () => tabs.list.some((t) => t.dirty),
+    renderActive,
     layout: () => ed?.layout(),
   };
   registerEditor(api);
@@ -418,12 +457,17 @@ export function EditorPane() {
     });
     const K = monaco.KeyMod;
     const C = monaco.KeyCode;
+    notebook = attachNotebook(ed);
     ed.addCommand(K.CtrlCmd | C.Enter, runSelection);
     ed.addCommand(K.WinCtrl | C.Enter, runSelection);
-    ed.addCommand(K.CtrlCmd | K.Shift | C.Enter, () => void sourceActive(true));
+    ed.addCommand(K.CtrlCmd | K.Shift | C.Enter, () => (isNb() ? notebook!.runAtCursor() : void sourceActive(true)));
     ed.addCommand(K.CtrlCmd | K.Shift | C.KeyS, () => void sourceActive(false));
     ed.addCommand(K.CtrlCmd | C.KeyS, () => void api.saveActive());
-    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyR, runAll);
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyR, () => (isNb() ? notebook!.runAll() : runAll()));
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyC, () => isNb() && notebook!.runAtCursor());
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyP, () => isNb() && notebook!.runAbove());
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyI, () => isNb() && notebook!.insertChunk());
+    ed.addCommand(K.CtrlCmd | K.Shift | C.KeyK, renderActive);
     ed.addCommand(K.CtrlCmd | K.Shift | C.KeyM, () => ed.trigger('kbd', 'type', { text: ' |> ' }));
     ed.addCommand(K.Alt | C.Minus, () => ed.trigger('kbd', 'type', { text: ' <- ' }));
     ed.addCommand(K.CtrlCmd | C.Digit2, () => consoleApi?.focus());
@@ -494,7 +538,7 @@ export function EditorPane() {
         }
       />
       <div class="pane-toolbar">
-        <button class="tb-btn" title={`Save (${modKey}S)`} disabled={!activeTab() || activeTab()!.gridOnly} onClick={() => void api.saveActive()}>
+        <button class="tb-btn" title={`Save (${kbd('mod+S')})`} disabled={!activeTab() || activeTab()!.gridOnly} onClick={() => void api.saveActive()}>
           <Icon name="save" />
         </button>
         <button class="tb-btn" title="Find / Replace" disabled={!activeTab() || inGrid()} onClick={() => ed.getAction('actions.find')?.run()}>
@@ -528,13 +572,78 @@ export function EditorPane() {
             <span>Import to R</span>
           </button>
         </Show>
+        <Show when={isNb()}>
+          <span class="tb-sep" />
+          <button class="tb-btn" title={`Insert an R chunk (${kbd('mod+alt+I')})`} onClick={() => notebook?.insertChunk()}>
+            <Icon name="plus" />
+          </button>
+          <div class="view-toggle" role="group" aria-label="Chunk output">
+            <button
+              class="tb-btn labeled"
+              classList={{ active: nb.mode === 'inline' }}
+              title="Show chunk output under each chunk"
+              onClick={() => setOutputMode('inline')}
+            >
+              <span>Inline</span>
+            </button>
+            <button
+              class="tb-btn labeled"
+              classList={{ active: nb.mode === 'pane' }}
+              title="Show chunk output in the Output tab"
+              onClick={() => {
+                setOutputMode('pane');
+                setState('plotTab', 'output');
+              }}
+            >
+              <span>Pane</span>
+            </button>
+          </div>
+          <button class="tb-btn" title="Clear all chunk output" disabled={!runsFor(nb.activeDoc).length && !inlinesFor(nb.activeDoc).length} onClick={() => notebook?.clear()}>
+            <Icon name="broom" />
+          </button>
+        </Show>
         <span class="tb-sep" />
         <span class="tb-spacer" />
-        <Show when={!isTabular()}>
+        <Show when={isNb()}>
+          <Show when={anyRunning()}>
+            <button class="tb-btn labeled danger" title="Stop running chunks" onClick={stopChunks}>
+              <Icon name="stop" />
+              <span>Stop</span>
+            </button>
+          </Show>
+          <button
+            class="tb-btn labeled"
+            disabled={state.rStatus !== 'ready' || isInstalling() || preview.status === 'rendering'}
+            title={`Render to HTML in the Preview tab (${kbd('mod+shift+K')})`}
+            onClick={renderActive}
+          >
+            <Icon name="book" />
+            <span>Render</span>
+          </button>
+          <button
+            class="tb-btn labeled run"
+            disabled={state.rStatus !== 'ready' || isInstalling()}
+            title={`Run the chunk at the cursor (${kbd('mod+shift+enter')})`}
+            onClick={() => notebook?.runAtCursor()}
+          >
+            <Icon name="play" />
+            <span>Run Chunk</span>
+          </button>
+          <button
+            class="tb-btn labeled run"
+            disabled={state.rStatus !== 'ready' || isInstalling()}
+            title={`Run every R chunk (${kbd('mod+alt+R')})`}
+            onClick={() => notebook?.runAll()}
+          >
+            <Icon name="run-all" />
+            <span>Run All</span>
+          </button>
+        </Show>
+        <Show when={!isTabular() && !isNb()}>
         <button
           class="tb-btn labeled run"
           disabled={!activeTab() || !isR() || state.rStatus !== 'ready' || isInstalling()}
-          title={`Run the current line or selection (${modKey}↩)`}
+          title={`Run the current line or selection (${kbd('mod+enter')})`}
           onClick={() => {
             runSelection();
             ed.focus();
@@ -546,7 +655,7 @@ export function EditorPane() {
         <button
           class="tb-btn labeled run"
           disabled={!activeTab() || !isR() || state.rStatus !== 'ready' || isInstalling()}
-          title={`Run the whole script (${modKey}⌥R)`}
+          title={`Run the whole script (${kbd('mod+alt+R')})`}
           onClick={() => {
             runAll();
             ed.focus();
@@ -558,7 +667,7 @@ export function EditorPane() {
         <button
           class="tb-btn labeled"
           disabled={!activeTab() || !isR() || state.rStatus !== 'ready' || isInstalling()}
-          title={`Source the file (${modKey}⇧S) — long-press or ${modKey}⇧↩ to echo`}
+          title={`Source the file (${kbd('mod+shift+S')}) — long-press or ${kbd('mod+shift+enter')} to echo`}
           onClick={(e) => void sourceActive(e.shiftKey || e.altKey)}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -610,7 +719,7 @@ export function EditorPane() {
               </button>
             </div>
             <p class="hint">
-              {modKey}↩ runs the current line · {modKey}⌥R runs the whole script
+              {kbd('mod+enter')} runs the current line · {kbd('mod+alt+R')} runs the whole script
             </p>
           </div>
         </Show>

@@ -4,6 +4,7 @@ import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
 import CssWorker from 'monaco-editor/language/css/css.worker?worker';
 import HtmlWorker from 'monaco-editor/language/html/html.worker?worker';
 import TsWorker from 'monaco-editor/language/typescript/ts.worker?worker';
+import { conf as mdConf, language as mdLanguage } from 'monaco-editor/languages/definitions/markdown/markdown.js';
 import { completions } from './ide';
 
 (self as any).MonacoEnvironment = {
@@ -59,7 +60,8 @@ export function languageFor(filename: string): string {
   const lower = filename.toLowerCase();
   const ext = lower.includes('.') ? lower.slice(lower.lastIndexOf('.')) : '';
   if (ext === '.r') return 'r';
-  if (ext === '.rmd' || ext === '.qmd' || ext === '.md' || ext === '.markdown') return 'markdown';
+  if (ext === '.rmd' || ext === '.qmd') return 'quarto';
+  if (ext === '.md' || ext === '.markdown') return 'markdown';
   if (ext === '.rprofile' || lower === '.rprofile' || lower === '.renviron') return 'r';
   for (const lang of monaco.languages.getLanguages()) {
     if (lang.extensions?.some((e) => e.toLowerCase() === ext)) return lang.id;
@@ -89,10 +91,41 @@ export function isBinaryName(name: string) {
   return BINARY_EXT.has(extOf(name)) || name === '.RData';
 }
 
+// Quarto / R Markdown: Markdown with R highlighting inside ```{r} chunks.
+monaco.languages.register({ id: 'quarto', extensions: ['.qmd', '.rmd'], aliases: ['Quarto', 'R Markdown'] });
+monaco.languages.setLanguageConfiguration('quarto', mdConf);
+monaco.languages.setMonarchTokensProvider('quarto', {
+  ...mdLanguage,
+  tokenizer: {
+    ...mdLanguage.tokenizer,
+    root: [
+      [/^\s*```+\s*\{\s*[rR]\b[^}]*\}\s*$/, { token: 'string', next: '@rchunk', nextEmbedded: 'r' }],
+      [/^\s*```+\s*\{\s*(\w+)[^}]*\}\s*$/, { token: 'string', next: '@codeblockgh', nextEmbedded: '$1' }],
+      [/^---\s*$/, 'keyword'],
+      ...mdLanguage.tokenizer.root,
+    ],
+    rchunk: [
+      [/^\s*```+\s*$/, { token: 'string', next: '@pop', nextEmbedded: '@pop' }],
+      [/.*$/, 'variable.source'],
+    ],
+  },
+});
+
+/** True if `line` (1-based) is inside an R chunk of a Quarto / R Markdown document. */
+export function inRChunk(model: monaco.editor.ITextModel, line: number): boolean {
+  for (let ln = line; ln >= 1; ln--) {
+    const t = model.getLineContent(ln);
+    if (/^\s*```+\s*\{\s*r\b[^}]*\}\s*$/i.test(t)) return ln < line;
+    if (/^\s*```/.test(t)) return false;
+  }
+  return false;
+}
+
 // R completions backed by R's own completion engine (utils:::.completeToken).
-monaco.languages.registerCompletionItemProvider('r', {
+const rCompletions: monaco.languages.CompletionItemProvider = {
   triggerCharacters: ['$', '@', ':', '('],
   async provideCompletionItems(model, position) {
+    if (model.getLanguageId() === 'quarto' && !inRChunk(model, position.lineNumber)) return { suggestions: [] };
     const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
     const { token, items } = await completions(line);
     if (!items.length) return { suggestions: [] };
@@ -111,7 +144,9 @@ monaco.languages.registerCompletionItemProvider('r', {
       })),
     };
   },
-});
+};
+monaco.languages.registerCompletionItemProvider('r', rCompletions);
+monaco.languages.registerCompletionItemProvider('quarto', rCompletions);
 
 /**
  * From `start` (1-based line), find the last line of the R statement that

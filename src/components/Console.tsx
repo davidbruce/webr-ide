@@ -3,7 +3,7 @@ import { WTerm } from '@wterm/dom';
 import '@wterm/dom/css';
 import { session, state, completions, restartR, rDisplayPath } from '../lib/ide';
 import { Icon } from './Icon';
-import { confirmDialog, modKey } from '../lib/ui';
+import { confirmDialog, kbd } from '../lib/ui';
 import { PaneHeader } from './Pane';
 
 const BLUE = '\x1b[38;2;37;99;235m';
@@ -444,7 +444,7 @@ export function ConsolePane() {
             <button class="tb-btn" onClick={() => (clear(), term?.focus())} title={`Clear console (Ctrl+L)`}>
               <Icon name="broom" />
             </button>
-            <button class="tb-btn" onClick={onRestart} title={`Restart R (${modKey}⇧F10)`}>
+            <button class="tb-btn" onClick={onRestart} title={`Restart R (${kbd('mod+shift+F10')})`}>
               <Icon name="power" />
             </button>
           </>

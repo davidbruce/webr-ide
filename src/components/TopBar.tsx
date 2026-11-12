@@ -13,11 +13,72 @@ import {
   session,
 } from '../lib/ide';
 import * as fs from '../lib/opfs';
-import { askText, confirmDialog, formatBytes, isDark, modKey, setThemePref, themePref, toast } from '../lib/ui';
+import { askText, confirmDialog, formatBytes, isDark, kbd, setThemePref, themePref, toast } from '../lib/ui';
 import { Icon } from './Icon';
+import { openStorageInfo } from './StorageInfo';
 import { resetLayout } from './Workbench';
 import { EXAMPLES, EXAMPLE_GROUPS, Example } from '../lib/examples';
 import { openPackageBrowser } from '../lib/pkg-actions';
+
+const QUARTO_TEMPLATE = `---
+title: "Untitled"
+format: html
+---
+
+## Quarto
+
+Run a chunk with the ▶ button on its first line, or press ⌘⇧↩ (Ctrl+Shift+Enter on Windows/Linux) inside it.
+
+\`\`\`{r}
+summary(cars)
+\`\`\`
+
+\`\`\`{r}
+#| label: fig-cars
+plot(cars)
+\`\`\`
+`;
+
+const SLIDES_TEMPLATE = `---
+title: "Untitled Presentation"
+author: "Your Name"
+format:
+  revealjs:
+    slide-number: true
+---
+
+## Hello
+
+- Each \`##\` heading starts a new slide
+- Press **Render** to build the slides, then **Present**
+
+::: {.notes}
+Speaker notes go here; they aren't shown on the slide.
+:::
+
+## A plot
+
+\`\`\`{r}
+#| echo: false
+plot(cars)
+\`\`\`
+
+## Two columns {.smaller}
+
+:::: {.columns}
+::: {.column width="50%"}
+\`\`\`{r}
+summary(cars)
+\`\`\`
+:::
+::: {.column width="50%"}
+::: {.incremental}
+- Points appear
+- one at a time
+:::
+:::
+::::
+`;
 
 export function TopBar() {
   const [wsMenu, setWsMenu] = createSignal(false);
@@ -92,7 +153,8 @@ export function TopBar() {
 
   const newItems: { label: string; name: string; content: string }[] = [
     { label: 'R Script', name: 'Untitled.R', content: '' },
-    { label: 'R Markdown', name: 'Untitled.Rmd', content: '---\ntitle: "Untitled"\noutput: html_document\n---\n\n```{r}\nsummary(cars)\n```\n' },
+    { label: 'Quarto Document', name: 'Untitled.qmd', content: QUARTO_TEMPLATE },
+    { label: 'Quarto Presentation', name: 'Slides.qmd', content: SLIDES_TEMPLATE },
     { label: 'Text File', name: 'Untitled.txt', content: '' },
     { label: 'CSV File', name: 'Untitled.csv', content: '' },
   ];
@@ -118,7 +180,7 @@ export function TopBar() {
         <span class="hide-narrow">New</span>
         <Icon name="chevron-down" size={12} />
       </button>
-      <button class="tb-btn" title={`Save (${modKey}S)`} onClick={() => void editor()?.saveActive()}>
+      <button class="tb-btn" title={`Save (${kbd('mod+S')})`} onClick={() => void editor()?.saveActive()}>
         <Icon name="save" />
       </button>
       <button class="tb-btn labeled hide-narrow" title="Save all open files" onClick={() => void editor()?.saveAll()}>
@@ -273,6 +335,15 @@ export function TopBar() {
                 }}
               >
                 <Icon name="grid" /> Reset Pane Layout
+              </button>
+              <button
+                class="menu-item"
+                onClick={() => {
+                  setWsMenu(false);
+                  openStorageInfo();
+                }}
+              >
+                <Icon name="box" /> Storage Details…
               </button>
               <Show when={storage()}>
                 <div class="menu-foot">{storage()}</div>

@@ -12,8 +12,18 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@fontsource/lato": "^5.1.1",
+    "@fontsource/league-gothic": "^5.1.1",
+    "@fontsource/montserrat": "^5.1.1",
+    "@fontsource/news-cycle": "^5.1.1",
+    "@fontsource/open-sans": "^5.1.1",
+    "@fontsource/quicksand": "^5.1.1",
+    "@fontsource/source-sans-3": "^5.1.1",
+    "@fontsource/ubuntu": "^5.1.1",
     "@wterm/dom": "^0.5.10",
+    "katex": "^0.16.22",
     "monaco-editor": "^0.57.0",
+    "reveal.js": "^5.2.1",
     "solid-js": "^1.9.19",
     "webr": "^0.6.1"
   },

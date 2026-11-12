@@ -9,6 +9,50 @@ An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to W
 - **Files sidebar:** create, rename, delete, upload, download, and drag-and-drop; import CSV files; source scripts
 - **Workspaces:** each workspace has its own files, history, open tabs, and saved environment (`.RData`)
 
+## Quarto notebooks
+
+Quarto (`.qmd`) and R Markdown (`.Rmd`) documents work like notebooks. **New → Quarto Document** starts one.
+
+- **Run chunks.** Each ```` ```{r} ```` chunk has ▶ (run) and ⤒ (run all above) buttons at the right of its first line. The toolbar has **Run Chunk**, **Run All**, **Stop**, and ＋ to insert a chunk.
+- **Output where you want it.** **Inline** shows output under each chunk; **Pane** shows it in the **Output** tab. Printed values, messages, warnings, errors and plots appear in the order they happened. Tap a plot to enlarge it.
+- **Rich output.** Data frames and tibbles show as paged tables (first 1,000 rows). HTML widgets such as plotly, leaflet, DT and reactable, and gt tables, are interactive, with a button to open them full size.
+- **Inline code.** ⌘↩ on a line with `` `r expr` `` shows its value after the expression. **Run All** evaluates inline code in document order with the chunks.
+- **Saved output.** Output is saved per document in the workspace's hidden `.ide/outputs/` folder. It comes back when you reopen the document or reload, and moves with the file on rename. Clearing output (🧹) deletes it.
+- **Shared session.** Chunks run in the same R session as the console, so objects appear in the Environment pane.
+
+### Render to HTML
+
+**Render** (⌘⇧K) knits the document and shows it in the **Preview** tab: an HTML page for `format: html` (the default), or slides for `format: revealjs`. Saving re-renders it while it's being previewed. The page can be saved next to the document as `.html`, or downloaded. It is self-contained: images, widgets and their libraries are inlined, and it works offline.
+
+It uses knitr and litedown, both installed on first use, rather than Quarto/Pandoc, and adds Quarto's HTML features itself:
+
+- Title block (`title`, `subtitle`, `author`, `date`, `abstract`), `toc`, `number-sections` and `code-fold` (under `format: html:` or at the top level), and `execute:` options
+- Chunk options in `#|` form (`echo`, `eval`, `include`, `fig-cap`, `fig-width`, `code-fold`, …)
+- Callouts (`::: {.callout-note}` and the other four types, with a heading or `title=`), tabsets (`::: {.panel-tabset}`)
+- Figure and table cross-references (`#| label: fig-…` / `tbl-…` with `@fig-…`, `@tbl-…`, `@sec-…`)
+- Maths (`$…$`, `$$…$$`), rendered as MathML with KaTeX, and highlighted code
+
+### Presentations
+
+`format: revealjs` renders [reveal.js](https://revealjs.com) slides into the Preview tab. **New → Quarto Presentation** starts one. They follow Quarto's conventions and look:
+
+- **Themes.** Quarto's own reveal.js themes (`default`, `dark`, `beige`, `blood`, `dracula`, `league`, `moon`, `night`, `serif`, `simple`, `sky`, `solarized`; `white`/`black` are aliases). They're compiled from Quarto's Sass sources (`scripts/build-quarto-themes.py`), and their fonts (Source Sans, Lato, League Gothic, …) are bundled, so slides look the same offline.
+- **Structure.** `##` headings start slides, `#` headings make section slides, `---` starts an untitled slide, and there's a title slide. With `navigation-mode: vertical`, each `#` section becomes a vertical stack.
+- **Slide attributes.** `{.smaller}`, `{.scrollable}`, `{background-color="…"}`, `{background-image="…"}`, `{transition="…"}`, `{auto-animate=true}`.
+- **Content.** `::: {.incremental}` / `{.nonincremental}`, `::: {.fragment}`, `:::: {.columns}` with `::: {.column width="40%"}`, `.absolute` with `top`/`left`/`right`/`bottom`/`width`/`height`, and `::: {.notes}`. Plots, widgets, maths, callouts and highlighted code work as in documents.
+- **Options** under `format: revealjs:`: `theme`, `transition`, `slide-number`, `incremental`, `smaller`, `scrollable`, `footer`, `logo`, `controls`, `progress`, `center`, `width`, `height`, `margin`, `loop`, `navigation-mode`, `chalkboard`.
+
+Presenting:
+
+- **Present** shows the slides full screen. Safari can't lock the screen to landscape, so on a touch device held upright (for example an iPad with rotation lock on, held sideways) the slides turn 90° to fill the screen. The ⟲ ⟳ buttons change the direction or turn it off, and the rotation is dropped if the screen turns to landscape. On iPhone, which has no element full screen, a full-window view is used instead.
+- **Presenter** opens the presenter view: the current slide, the next one, speaker notes (resizable), an elapsed timer you can pause, the time, and large previous/next buttons for touch.
+- **Audience window** (⛶) opens the slides in a separate window to drag to a projector or second display, with its own **Full screen** button. On iPad it opens as a Safari tab, which Stage Manager can move to an external display. Every view stays on the same slide, whichever one you navigate from.
+- **Pen.** Draw over slides with the pen button (when `chalkboard: true`), the presenter's **Pen**, `C`, or just an Apple Pencil. `B` opens a blank board and Delete clears. Drawings appear in every view.
+
+The saved `.html` is a single self-contained file that works offline. Not supported: Quarto's multiplex, which needs a server to broadcast to viewers' browsers.
+
+Not supported: PDF/Word output, citations from `.bib` files, Quarto projects, and non-R engines. The code runs in an environment that inherits from the global environment, rather than in a fresh R session as Quarto does, so it can see objects you've created in the console.
+
 ## Data grid
 
 CSV, TSV, PSV and `.tab` files get a **Text | Grid** toggle in the script toolbar. Grid view is a read-only spreadsheet:
@@ -46,6 +90,11 @@ Every install path is tracked: `webr::install()`, `install.packages()`, `library
 Downloads served from the browser cache finish in milliseconds. To avoid a flash, the overlay only appears for installs that take longer than 150 ms, and then stays up for at least 400 ms.
 
 ## Storage
+
+**If files disappear on reload**, the browser isn't letting the IDE save. At startup the IDE saves a test file; if that fails, it shows a banner with the reason and keeps files in memory for that page only. **Workspace menu → Storage Details…** lists what the browser supports, with a Copy button. Common causes:
+- **An `http://` address**, such as the dev server opened from a phone at `http://192.168.x.x:5173`. Browsers only allow storage on `https://` or `localhost`.
+- **Private Browsing.**
+- **Blocked website data.** On iPhone/iPad, turn off Settings → Apps → Safari → **Block All Cookies**.
 
 Files live in the browser's **Origin Private File System (OPFS)**, which Safari has supported since 15.2, at `/workspaces/<name>/…`. On older Safari versions that lack `createWritable()`, writes go through a worker that uses `createSyncAccessHandle()`. If OPFS is unavailable (for example in some private-browsing modes), the IDE falls back to in-memory storage and shows a warning.
 
@@ -87,17 +136,23 @@ The Packages tab splits the list into the **User library** (saved packages) and 
 
 ## Keyboard shortcuts
 
-| Action | Shortcut |
-|---|---|
-| Run line / selection (**Run**) | ⌘↩ (or Ctrl↩) |
-| Run whole script (**Run All**) | ⌘⌥R |
-| Source file with echo | ⌘⇧↩ |
-| Source file | ⌘⇧S |
-| Save | ⌘S |
-| Insert `<-` / ` \|> ` | ⌥- / ⌘⇧M |
-| Focus console | Ctrl+2 |
-| Console: complete / history / interrupt / clear | Tab / ↑↓ / Ctrl+C / Ctrl+L |
-| Restart R | ⌘⇧F10 |
+The same shortcuts work on all platforms: ⌘ on Mac and iPad keyboards is Ctrl on Windows and Linux, and ⌥ is Alt. Tooltips show the keys for your platform.
+
+| Action | Mac / iPad | Windows / Linux |
+|---|---|---|
+| Run line / selection (**Run**) | ⌘↩ (or ⌃↩) | Ctrl+Enter |
+| Run whole script, or every chunk (**Run All**) | ⌘⌥R | Ctrl+Alt+R |
+| Source file with echo (in a Quarto document: run the current chunk) | ⌘⇧↩ | Ctrl+Shift+Enter |
+| Quarto: run chunk / run all chunks above / insert chunk | ⌘⌥C / ⌘⌥P / ⌘⌥I | Ctrl+Alt+C / Ctrl+Alt+P / Ctrl+Alt+I |
+| Quarto: render to the Preview tab | ⌘⇧K | Ctrl+Shift+K |
+| Source file | ⌘⇧S | Ctrl+Shift+S |
+| Save / new R script | ⌘S / ⌘⌥N | Ctrl+S / Ctrl+Alt+N |
+| Insert `<-` / ` \|> ` | ⌥- / ⌘⇧M | Alt+- / Ctrl+Shift+M |
+| Focus console | ⌃2 | Ctrl+2 ¹ |
+| Console: complete / history / interrupt / clear | Tab / ↑↓ / ⌃C / ⌃L | Tab / ↑↓ / Ctrl+C / Ctrl+L |
+| Restart R | ⌘⇧F10 | Ctrl+Shift+F10 |
+
+¹ Most Windows/Linux browsers keep Ctrl+1–8 for switching tabs, so Ctrl+2 may switch tabs instead. Click the console to focus it.
 
 Double-click (or double-tap) a pane header, or use its □ button, to zoom that pane. Drag the gutters to resize panes; double-click a gutter to reset it.
 
