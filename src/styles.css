@@ -2961,3 +2961,55 @@ body.resizing-row * {
     font-size: 16px !important;
   }
 }
+
+/* ---------------------------------------------------------------- phone key bar */
+
+/* Same height as the tab bar it replaces, so nothing shifts when it swaps. */
+.keybar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  height: calc(54px + max(4px, env(safe-area-inset-bottom)));
+  padding: 3px 6px max(4px, env(safe-area-inset-bottom));
+  padding-left: max(6px, env(safe-area-inset-left));
+  padding-right: max(6px, env(safe-area-inset-right));
+  border-top: 1px solid var(--border);
+  background: var(--bg-topbar);
+  box-sizing: border-box;
+}
+.phone-tabs {
+  height: calc(54px + max(4px, env(safe-area-inset-bottom)));
+  box-sizing: border-box;
+}
+.keybar-key {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  max-height: 46px;
+  align-self: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-pane);
+  color: var(--text);
+  box-shadow: 0 1px 0 var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.keybar-key:active {
+  background: var(--bg-active);
+}
+.keybar-key.run {
+  color: var(--ok);
+}
+@media (max-height: 500px) and (pointer: coarse) {
+  .keybar,
+  .phone-tabs {
+    height: calc(42px + max(2px, env(safe-area-inset-bottom)));
+  }
+}

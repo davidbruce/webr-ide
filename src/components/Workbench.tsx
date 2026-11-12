@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import { state, setState, editor, phone, showPane, PhoneTab } from '../lib/ide';
 import { Icon } from './Icon';
+import { KeyBar, keyBarTarget, keyboardUp } from './KeyBar';
 import { EditorPane } from './Editor';
 import { ConsolePane } from './Console';
 import { EnvPane } from './EnvPane';
@@ -194,10 +195,25 @@ const PHONE_TABS: { id: PhoneTab; label: string; icon: string }[] = [
   { id: 'plots', label: 'Plots', icon: 'image' },
 ];
 
-/** Bottom tab bar on phones: one pane on screen at a time. */
+/**
+ * Bottom of the screen on phones: pane tabs, or programming keys while the
+ * editor or console has the keyboard (nothing while another field has it).
+ */
 export function PhoneTabs() {
   return (
     <Show when={phone()}>
+      <Show when={!keyBarTarget()} fallback={<KeyBar />}>
+        <Show when={!keyboardUp()}>
+          <PaneTabs />
+        </Show>
+      </Show>
+    </Show>
+  );
+}
+
+function PaneTabs() {
+  return (
+    <>
       <nav class="phone-tabs" role="tablist" aria-label="Panes">
         <For each={PHONE_TABS}>
           {(t) => (
@@ -219,6 +235,6 @@ export function PhoneTabs() {
           )}
         </For>
       </nav>
-    </Show>
+    </>
   );
 }

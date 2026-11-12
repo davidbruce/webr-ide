@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host",
+    "tunnel": "cloudflared tunnel --url http://localhost:5173",
+    "tunnel:preview": "cloudflared tunnel --url http://localhost:4173",
     "typecheck": "tsc --noEmit"
   },
   "author": "",

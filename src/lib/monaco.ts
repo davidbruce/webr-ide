@@ -127,21 +127,26 @@ const rCompletions: monaco.languages.CompletionItemProvider = {
   async provideCompletionItems(model, position) {
     if (model.getLanguageId() === 'quarto' && !inRChunk(model, position.lineNumber)) return { suggestions: [] };
     const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-    const { token, items } = await completions(line);
+    const { token, items, fn } = await completions(line);
     if (!items.length) return { suggestions: [] };
     const range = new monaco.Range(position.lineNumber, position.column - token.length, position.lineNumber, position.column);
+    // Functions get () with the cursor inside, unless a ( already follows.
+    const parenFollows = model.getLineContent(position.lineNumber).slice(position.column - 1).trimStart().startsWith('(');
+    const K = monaco.languages.CompletionItemKind;
     return {
-      suggestions: items.slice(0, 500).map((label, i) => ({
-        label,
-        kind: label.endsWith('=') || label.endsWith('= ')
-          ? monaco.languages.CompletionItemKind.Property
-          : label.includes('::')
-            ? monaco.languages.CompletionItemKind.Module
-            : monaco.languages.CompletionItemKind.Variable,
-        insertText: label,
-        range,
-        sortText: String(i).padStart(5, '0'),
-      })),
+      suggestions: items.slice(0, 500).map((label, i) => {
+        const isFn = fn[i] && !parenFollows;
+        return {
+          label,
+          kind: fn[i] ? K.Function : label.endsWith('=') || label.endsWith('= ') ? K.Property : label.includes('::') ? K.Module : K.Variable,
+          insertText: isFn ? `${label.replace(/[\\$}]/g, '\\$&')}($0)` : label,
+          insertTextRules: isFn ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+          // Then offer the function's argument names.
+          command: isFn ? { id: 'editor.action.triggerSuggest', title: 'Arguments' } : undefined,
+          range,
+          sortText: String(i).padStart(5, '0'),
+        };
+      }),
     };
   },
 };
@@ -177,6 +182,17 @@ export function statementEnd(model: monaco.editor.ITextModel, start: number): nu
     if (depth === 0 && !quote && !trailingOp) return ln;
   }
   return n;
+}
+
+const coarsePointer = window.matchMedia('(pointer: coarse)');
+/**
+ * Focus the editor for keyboard users. On touch screens, only if it already
+ * has focus: programmatic focus doesn't raise the on-screen keyboard there,
+ * and would leave the phone key bar showing with no keyboard.
+ */
+export function softFocus(ed: monaco.editor.ICodeEditor | undefined) {
+  if (!ed) return;
+  if (!coarsePointer.matches || ed.hasTextFocus()) ed.focus();
 }
 
 export { monaco };

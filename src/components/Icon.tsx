@@ -175,6 +175,12 @@ const paths: Record<string, JSX.Element> = {
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />,
   check: <path d="M5 12l5 5 9-10" />,
   'arrow-up': <path d="M12 19V5M6 11l6-6 6 6" />,
+  'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
+  'arrow-left': <path d="M19 12H5M11 6l-6 6 6 6" />,
+  'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
+  tab: <path d="M4 12h13M12 7l5 5-5 5M20 6v12" />,
+  undo: <path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
+  redo: <path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" />,
   offline: (
     <>
       <path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 7.97" />

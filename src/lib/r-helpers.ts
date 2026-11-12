@@ -81,7 +81,15 @@ local({
     token <- utils:::.guessTokenFromLine()
     utils:::.completeToken()
     comps <- utils:::.retrieveCompletions()
-    c(token, comps)
+    # Mark functions (suffix "\x1f(") so the editor can add () after them.
+    is_fn <- vapply(comps, function(x) {
+      if (!grepl("^[A-Za-z.][A-Za-z0-9._]*(:::?[A-Za-z.][A-Za-z0-9._]*)?$", x)) return(FALSE)
+      tryCatch(
+        if (grepl("::", x, fixed = TRUE)) is.function(eval(str2lang(x))) else exists(x, envir = globalenv(), mode = "function"),
+        error = function(err) FALSE
+      )
+    }, TRUE, USE.NAMES = FALSE)
+    c(token, paste0(comps, ifelse(is_fn, "\x1f(", "")))
   }
 
   e$.ide_packages <- function() {

@@ -172,8 +172,21 @@ Double-click (or double-tap) a pane header, or use its □ button, to zoom that 
 npm install
 npm run dev        # http://localhost:5173 (sends COOP/COEP headers)
 npm run build      # production build → dist/
-npm run preview -- --host   # serve dist/ on your LAN to test from an iPad
+npm run preview    # serve dist/ (the production build) on http://localhost:4173
 ```
+
+### Testing on a phone or tablet
+
+Saving files and the service worker only work over `https://` (or on `localhost`), so a LAN address like `http://192.168.1.5:5173` won't behave like the real site. Use a free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) instead (no account needed; `brew install cloudflared`):
+
+```bash
+npm run dev            # terminal 1
+npm run tunnel         # terminal 2: prints https://<random>.trycloudflare.com
+```
+
+Open the printed address on the phone. Edits reload live. To test the production build, including offline mode, use `npm run build && npm run preview` with `npm run tunnel:preview`. The address changes each time, and anyone who has it can open the page while the tunnel runs; stop it with Ctrl+C.
+
+To debug the phone's Safari from a Mac, enable **Settings → Apps → Safari → Advanced → Web Inspector** on the phone, connect it by cable, and use Safari's **Develop** menu on the Mac.
 
 ## Deployment
 

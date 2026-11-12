@@ -39,11 +39,18 @@ export interface EditorApi {
   closeAll(force?: boolean): Promise<boolean>;
   hasDirty(): boolean;
   layout(): void;
+  /** Phone key bar: move, insert, tab, undo/redo or run, in the focused editor. */
+  key?(action: KeyAction): void;
   /** Render the active Quarto / R Markdown document into the Preview tab. */
   renderActive?(): void;
 }
 
 export type PaneId = 'script' | 'console' | 'env' | 'plots';
+
+export type KeyAction =
+  | { type: 'move'; dir: 'left' | 'right' | 'up' | 'down' }
+  | { type: 'text'; text: string; /** Put the cursor this many characters back (for pairs). */ back?: number }
+  | { type: 'tab' | 'undo' | 'redo' | 'run' };
 
 // ---------------------------------------------------------------- phone layout
 
@@ -123,9 +130,20 @@ const [state, setState] = createStore({
   phoneBadges: { console: false, plots: false } as Record<'console' | 'plots', boolean>,
 });
 
+let stayOnPane = false;
+/** Run something that submits code without switching the phone to the Console. */
+export function withoutPaneSwitch(fn: () => void) {
+  stayOnPane = true;
+  try {
+    fn();
+  } finally {
+    stayOnPane = false;
+  }
+}
+
 /** On phones, bring a pane on screen (no-op on larger screens). */
 export function showPane(tab: PhoneTab) {
-  if (!phone()) return;
+  if (!phone() || stayOnPane) return;
   batch(() => {
     setState('phoneTab', tab);
     if (tab === 'console' || tab === 'plots') setState('phoneBadges', tab, false);
@@ -304,13 +322,17 @@ export async function refreshPackages() {
   }
 }
 
-export async function completions(line: string): Promise<{ token: string; items: string[] }> {
-  if (!(await session.waitIdle(1500))) return { token: '', items: [] };
+/** R completions for the text before the cursor; `fn` marks functions. */
+export async function completions(line: string): Promise<{ token: string; items: string[]; fn: boolean[] }> {
+  if (!(await session.waitIdle(1500))) return { token: '', items: [], fn: [] };
   try {
-    const res = await session.strings(`.ide_complete(${rString(line)})`);
-    return { token: res[0] ?? '', items: res.slice(1) };
+    const all = await session.strings(`.ide_complete(${rString(line)})`);
+    const res = all.slice(1);
+    const fn = res.map((s) => s.endsWith('\x1f('));
+    const items = res.map((s, i) => (fn[i] ? s.slice(0, -2) : s));
+    return { token: all[0] ?? '', items, fn };
   } catch {
-    return { token: '', items: [] };
+    return { token: '', items: [], fn: [] };
   }
 }
 

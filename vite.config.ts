@@ -139,8 +139,10 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
-  server: { headers: crossOriginIsolation },
-  preview: { headers: crossOriginIsolation },
+  // `.trycloudflare.com`: Cloudflare quick tunnels, for testing on a phone
+  // over https (`npm run tunnel` / `npm run tunnel:preview`).
+  server: { headers: crossOriginIsolation, allowedHosts: ['.trycloudflare.com'] },
+  preview: { headers: crossOriginIsolation, allowedHosts: ['.trycloudflare.com'] },
   worker: { format: 'es' },
   build: { target: 'es2022', chunkSizeWarningLimit: 6000 },
 });

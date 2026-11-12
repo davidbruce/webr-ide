@@ -1,13 +1,13 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { monaco, languageFor, statementEnd, isTabularName, TEXT_VIEW_MAX, GRID_MAX, extOf, inRChunk } from '../lib/monaco';
+import { monaco, languageFor, statementEnd, isTabularName, TEXT_VIEW_MAX, GRID_MAX, extOf, inRChunk, softFocus } from '../lib/monaco';
 import { attachNotebook, type NotebookControls } from './Notebook';
 import { preview, renderDocument } from '../lib/render';
 import { nb, setOutputMode, stopChunks, anyRunning, runsFor, inlinesFor, setDocPath, moveSavedOutput } from '../lib/notebook';
 import { FileSource } from '../lib/grid/source';
 import { DataGrid } from './DataGrid';
 import { formatBytes } from '../lib/ui';
-import { downloadPath, isInstalling, phone, rRoot, showPane } from '../lib/ide';
+import { downloadPath, isInstalling, phone, rRoot, showPane, withoutPaneSwitch } from '../lib/ide';
 import * as fs from '../lib/opfs';
 import {
   registerEditor,
@@ -79,7 +79,7 @@ export function EditorPane() {
     const model = key ? models.get(key) ?? null : null;
     ed.setModel(model);
     if (key && viewStates.get(key)) ed.restoreViewState(viewStates.get(key)!);
-    if (model) ed.focus();
+    if (model) softFocus(ed);
     scheduleIdeStateSave();
   }
 
@@ -290,7 +290,7 @@ export function EditorPane() {
     if (!t || (mode === 'text' && t.gridOnly)) return;
     // Re-read the file into the grid if text edits were saved since it was last shown.
     patchTab(t.key, { mode, fileVersion: mode === 'grid' ? t.fileVersion + 1 : t.fileVersion });
-    if (mode === 'text') queueMicrotask(() => ed?.focus());
+    if (mode === 'text') queueMicrotask(() => softFocus(ed));
   }
 
   function importToR() {
@@ -416,7 +416,7 @@ export function EditorPane() {
         return;
       }
       ed.executeEdits('history', [{ range: sel, text, forceMoveMarkers: true }]);
-      ed.focus();
+      softFocus(ed);
     },
     getOpenState() {
       const open = tabs.list.filter((t) => t.path).map((t) => t.path!);
@@ -436,6 +436,40 @@ export function EditorPane() {
     },
     hasDirty: () => tabs.list.some((t) => t.dirty),
     renderActive,
+    key(action) {
+      if (!ed?.getModel() || inGrid()) return;
+      const go = (cmd: string, args: unknown = null) => ed.trigger('keybar', cmd, args);
+      // The suggestion list is open: ↑/↓ move through it and Tab accepts, as on a keyboard.
+      const suggesting = () =>
+        !!(ed as any)._contextKeyService?.getContextKeyValue?.('suggestWidgetVisible') || !!document.querySelector('.suggest-widget.visible');
+      switch (action.type) {
+        case 'move':
+          if (suggesting() && (action.dir === 'up' || action.dir === 'down')) go(action.dir === 'down' ? 'selectNextSuggestion' : 'selectPrevSuggestion');
+          else go({ left: 'cursorLeft', right: 'cursorRight', up: 'cursorUp', down: 'cursorDown' }[action.dir]);
+          break;
+        case 'text': {
+          const sel = ed.getSelection();
+          if (!sel) return;
+          ed.executeEdits('keybar', [{ range: sel, text: action.text, forceMoveMarkers: true }]);
+          for (let i = 0; i < (action.back ?? 0); i++) go('cursorLeft');
+          break;
+        }
+        case 'tab':
+          go(suggesting() ? 'acceptSelectedSuggestion' : 'tab');
+          break;
+        case 'undo':
+          go('undo');
+          break;
+        case 'redo':
+          go('redo');
+          break;
+        case 'run':
+          // Stay in the editor (keyboard up); the Console tab gets a dot.
+          withoutPaneSwitch(() => (isNb() && inRChunk(ed.getModel()!, ed.getPosition()?.lineNumber ?? 1) ? notebook?.runAtCursor() : runSelection()));
+          break;
+      }
+      ed.focus();
+    },
     layout: () => ed?.layout(),
   };
   registerEditor(api);
@@ -481,6 +515,35 @@ export function EditorPane() {
     ed.addCommand(K.CtrlCmd | C.Digit2, () => consoleApi?.focus());
 
     createEffect(() => monaco.editor.setTheme(isDark() ? 'rstudio-dark' : 'rstudio-light'));
+    // Touch screens: allow scrolling past the end, so the last lines can be
+    // brought up above the on-screen keyboard.
+    const coarse = window.matchMedia('(pointer: coarse)');
+    const scrollPast = () => ed.updateOptions({ scrollBeyondLastLine: coarse.matches });
+    scrollPast();
+    coarse.addEventListener('change', scrollPast);
+    onCleanup(() => coarse.removeEventListener('change', scrollPast));
+
+    // When the keyboard opens (the visual viewport shrinks) while typing in
+    // the editor, resize straight away and keep the cursor line in view.
+    const vv = window.visualViewport;
+    if (vv) {
+      let lastHeight = vv.height;
+      let raf = 0;
+      const onViewport = () => {
+        const shrank = vv.height < lastHeight - 50;
+        lastHeight = vv.height;
+        if (!shrank || !ed.hasTextFocus()) return;
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          ed.layout();
+          const pos = ed.getPosition();
+          if (pos) ed.revealPositionInCenterIfOutsideViewport(pos, monaco.editor.ScrollType.Immediate);
+        });
+      };
+      vv.addEventListener('resize', onViewport);
+      onCleanup(() => vv.removeEventListener('resize', onViewport));
+    }
+
     // Phones: a narrower gutter and slightly smaller text leave room for code.
     createEffect(() =>
       ed.updateOptions(
@@ -662,7 +725,7 @@ export function EditorPane() {
           title={`Run the current line or selection (${kbd('mod+enter')})`}
           onClick={() => {
             runSelection();
-            ed.focus();
+            softFocus(ed);
           }}
         >
           <Icon name="play" />
@@ -674,7 +737,7 @@ export function EditorPane() {
           title={`Run the whole script (${kbd('mod+alt+R')})`}
           onClick={() => {
             runAll();
-            ed.focus();
+            softFocus(ed);
           }}
         >
           <Icon name="run-all" />

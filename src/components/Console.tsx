@@ -13,7 +13,7 @@ const RED_DARK = '\x1b[38;2;255;120;120m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
-export let consoleApi: { focus(): void; clear(): void; insert(text: string): void } | null = null;
+export let consoleApi: { focus(): void; clear(): void; insert(text: string): void; /** Feed keystrokes as if typed (e.g. from the phone key bar). */ input(data: string): void } | null = null;
 
 export function ConsolePane() {
   let host!: HTMLDivElement;
@@ -430,6 +430,7 @@ export function ConsolePane() {
         else buf = text;
         term?.focus();
       },
+      input: (data) => onData(data),
     };
   });
 

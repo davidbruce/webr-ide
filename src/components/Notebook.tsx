@@ -4,7 +4,7 @@
 
 import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from 'solid-js';
 import { render } from 'solid-js/web';
-import { monaco } from '../lib/monaco';
+import { monaco, softFocus } from '../lib/monaco';
 import { ansiToHtml } from '../lib/ansi';
 import {
   nb,
@@ -629,7 +629,7 @@ export function attachNotebook(ed: monaco.editor.IStandaloneCodeEditor): Noteboo
       if (!c) return;
       ed.revealLineNearTop(c.start, monaco.editor.ScrollType.Smooth);
       ed.setPosition({ lineNumber: Math.min(c.start + 1, c.end), column: 1 });
-      ed.focus();
+      softFocus(ed);
     },
   };
 
@@ -745,7 +745,7 @@ export function attachNotebook(ed: monaco.editor.IStandaloneCodeEditor): Noteboo
       ]);
       const at = line + (prefix ? 2 : 1);
       ed.setPosition({ lineNumber: at, column: 1 });
-      ed.focus();
+      softFocus(ed);
     },
   };
 }
