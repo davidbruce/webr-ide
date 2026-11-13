@@ -40,6 +40,7 @@ const GROUPS: [string, [string, string][]][] = [
       ['F1', 'Help for the name at the cursor'],
       ['mod+shift+P', 'Command palette'],
       ['mod+2', 'Move focus to the console'],
+      ['mod+,', 'Settings'],
       ['alt+shift+K', 'This list'],
     ],
   ],

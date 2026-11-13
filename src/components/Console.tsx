@@ -1,4 +1,5 @@
-import { getOwner, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
+import { createEffect, getOwner, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
+import { settings } from '../lib/settings';
 import { WTerm } from '@wterm/dom';
 import '@wterm/dom/css';
 import { session, state, completions, restartR, rDisplayPath, rRoot, editor } from '../lib/ide';
@@ -465,6 +466,20 @@ export function ConsolePane() {
   });
 
   onCleanup(() => term?.destroy?.());
+
+  // Font size from Settings.
+  createEffect(() => {
+    const size = settings.consoleFontSize;
+    host.style.setProperty('--term-font-size', `${size}px`);
+    host.style.setProperty('--term-row-height', `${Math.round(size * 1.38)}px`);
+    requestAnimationFrame(() => {
+      try {
+        term?.fit();
+      } catch {
+        /* not ready */
+      }
+    });
+  });
 
   async function onRestart() {
     if (await confirmDialog('Restart R', 'Restart the R session? Unsaved objects in the environment will be lost.', { okLabel: 'Restart', danger: true })) {

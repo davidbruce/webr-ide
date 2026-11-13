@@ -1,11 +1,13 @@
 // Editor language features for R: syntax errors as you type, function hints,
 // help on hover, the document outline, formatting and go-to-definition.
 // Most of it asks the running R session; all of it waits while R is busy.
+import { createEffect, createRoot, on } from 'solid-js';
 import { monaco, inRChunk } from './monaco';
 import { session, state, completions } from './ide';
 import { rString } from './r-session';
 import * as fs from './opfs';
 import { cachedText } from './text-cache';
+import { settings } from './settings';
 
 // ---------------------------------------------------------------- R regions
 
@@ -171,7 +173,7 @@ function scheduleCheck(model: monaco.editor.ITextModel, delay = 700) {
 
 async function checkModel(model: monaco.editor.ITextModel) {
   if (model.isDisposed()) return;
-  const regions = rRegions(model);
+  const regions = settings.syntaxCheck ? rRegions(model) : [];
   if (!regions.length) {
     monaco.editor.setModelMarkers(model, OWNER, []);
     return;
@@ -195,6 +197,78 @@ async function checkModel(model: monaco.editor.ITextModel) {
     if (msg) markers.push(markerFor(model, regions[i], msg));
   });
   monaco.editor.setModelMarkers(model, OWNER, markers);
+  // Code that parses: look for problems once typing has paused a little longer.
+  if (!markers.length) scheduleLint(model, Math.max(300, 1500 - (Date.now() - (lastEdit.get(model) ?? 0))));
+}
+
+// ---------------------------------------------------------------- problems (codetools)
+
+const LINT_OWNER = 'r-lint';
+const LINT_MAX_LINES = 4000;
+const lintTimers = new WeakMap<monaco.editor.ITextModel, number>();
+const pendingLints = new Set<monaco.editor.ITextModel>();
+
+function scheduleLint(model: monaco.editor.ITextModel, delay: number) {
+  clearTimeout(lintTimers.get(model));
+  lintTimers.set(model, window.setTimeout(() => void lintModel(model), delay));
+}
+
+/**
+ * Check each R region with codetools. R works in slices of ~100 ms (results
+ * for unchanged statements are cached in R), so a long first check never
+ * holds up code you run; it stops when you edit and picks up when R is idle.
+ */
+async function lintModel(model: monaco.editor.ITextModel) {
+  if (model.isDisposed()) return;
+  if (!settings.lint) {
+    monaco.editor.setModelMarkers(model, LINT_OWNER, []);
+    return;
+  }
+  const version = model.getVersionId();
+  const markers: monaco.editor.IMarkerData[] = [];
+  for (const region of rRegions(model)) {
+    if (region.text.split('\n').length > LINT_MAX_LINES) continue;
+    for (;;) {
+      if (!session.idle) {
+        pendingLints.add(model);
+        return;
+      }
+      const res = await ask(`.ide_lint(${rString(region.text)}, 0.1)`, 0);
+      if (!res || model.isDisposed() || model.getVersionId() !== version) return;
+      for (let i = 1; i + 1 < res.length; i += 2) markers.push(lintMarker(model, region.line + Number(res[i]) - 1, res[i + 1]));
+      if (res[0] === '1') break;
+      markers.length = 0; // partial: the next call returns this region's full list
+      await new Promise((r) => setTimeout(r, 30)); // let queued work (your code) run first
+    }
+  }
+  if (model.getVersionId() === version) monaco.editor.setModelMarkers(model, LINT_OWNER, markers);
+}
+
+/** A codetools message → a friendlier warning on the name it's about. */
+function lintMarker(model: monaco.editor.ITextModel, line: number, msg: string): monaco.editor.IMarkerData {
+  line = Math.max(1, Math.min(line, model.getLineCount()));
+  const text = model.getLineContent(line);
+  const quoted = /[‘'"`]([^’'"`]+)[’'"`]/.exec(msg)?.[1];
+  let message = msg;
+  let name = quoted;
+  let m: RegExpExecArray | null;
+  if (/no visible global function definition/.test(msg)) message = `Unknown function '${quoted}': not defined, or its package isn't loaded`;
+  else if ((m = /assigned but may not be used/.exec(msg))) message = `'${quoted}' is assigned but never used`;
+  else if ((m = /^possible error in ([\w.:]+)\(.*\): (.*)$/.exec(msg))) {
+    name = m[1];
+    message = `${m[1]}(): ${m[2]}`;
+  }
+  let start = 1;
+  let end = text.length + 1;
+  if (name) {
+    const at = new RegExp(`(^|[^\\w.])(${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?![\\w.])`).exec(text);
+    if (at) {
+      start = at.index + at[1].length + 1;
+      end = start + at[2].length;
+    }
+  }
+  if (start === 1) start = (/^\s*/.exec(text)?.[0].length ?? 0) + 1;
+  return { severity: monaco.MarkerSeverity.Warning, source: 'codetools', message, startLineNumber: line, startColumn: start, endLineNumber: line, endColumn: Math.max(end, start + 1) };
 }
 
 /** Turn R's parse error into a marker on the offending token. */
@@ -276,7 +350,9 @@ function watchModel(model: monaco.editor.ITextModel) {
     model.onDidChangeLanguage(() => scheduleCheck(model, 0)),
     model.onWillDispose(() => {
       clearTimeout(checkTimers.get(model));
+      clearTimeout(lintTimers.get(model));
       pendingChecks.delete(model);
+      pendingLints.delete(model);
     }),
   );
 }
@@ -293,6 +369,14 @@ const offSession = session.on((ev) => {
     pendingChecks.clear();
     for (const m of list) scheduleCheck(m, 100);
   }
+  if (ev.type === 'idle' && pendingLints.size) {
+    const list = [...pendingLints];
+    pendingLints.clear();
+    for (const m of list) scheduleLint(m, 300);
+  }
+  // Running code can define functions or load packages: recheck open files.
+  if (ev.type === 'idle' && settings.lint)
+    for (const m of monaco.editor.getModels()) if (['r', 'quarto'].includes(m.getLanguageId())) scheduleLint(m, 800);
   // Recheck everything once R is up (models opened while it was starting).
   if (ev.type === 'status' && ev.status === 'ready') for (const m of monaco.editor.getModels()) scheduleCheck(m, 300);
 });
@@ -740,6 +824,25 @@ export async function findDefinitions(
 // ---------------------------------------------------------------- registration
 
 subs.push({ dispose: offSession });
+
+// Settings switched: recheck (or clear) every open file.
+subs.push({
+  dispose: createRoot((dispose) => {
+    createEffect(
+      on(
+        () => [settings.syntaxCheck, settings.lint],
+        () => {
+          for (const m of monaco.editor.getModels()) {
+            scheduleCheck(m, 0);
+            if (!settings.lint) monaco.editor.setModelMarkers(m, LINT_OWNER, []);
+          }
+        },
+        { defer: true },
+      ),
+    );
+    return dispose;
+  }),
+});
 for (const lang of ['r', 'quarto']) {
   subs.push(
     monaco.languages.registerCompletionItemProvider(lang, rCompletions),

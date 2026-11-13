@@ -12,6 +12,7 @@
 // version is mounted from a blob: URL before the console becomes usable.
 
 import { createStore } from 'solid-js/store';
+import { setBoot, bootProgress } from './boot';
 import * as fs from './opfs';
 import { RSession, rString } from './r-session';
 
@@ -137,7 +138,9 @@ export async function setupPackages(session: RSession): Promise<{ mounted: numbe
 
   const mounted: string[] = [];
   const missing: string[] = [];
+  setBoot({ label: 'Restoring your packages', done: 0, total: entries.length });
   for (const e of entries) {
+    bootProgress(mounted.length + missing.length, entries.length);
     try {
       const { data, metadata } = await readVfsImage(await fs.readAppFile(e.file));
       const mountpoint = `${PKG_LIB}/${e.name}`;

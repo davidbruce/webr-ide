@@ -91,6 +91,90 @@ local({
     out
   }
 
+  # Problems codetools can see without running anything: unknown functions,
+  # calls with arguments a function doesn't take, and (inside functions)
+  # variables assigned but never used.
+  #
+  # Each top-level statement is checked on its own and the raw result cached
+  # by its source text, so editing one statement only re-checks that one.
+  # At most "budget" seconds are spent per call: the result starts with "1"
+  # when every statement was checked, "0" when the caller should call again.
+  # Then (line, message) pairs follow.
+  e$.ide_lint_cache <- new.env(hash = TRUE)
+  e$.ide_lint_one <- function(expr, ref) {
+    raw <- character(0)
+    rec <- function(m) raw <<- c(raw, m)
+    is_fn_def <- is.call(expr) && as.character(expr[[1]])[1] %in% c("<-", "=") && length(expr) == 3 &&
+      is.call(expr[[3]]) && identical(expr[[3]][[1]], as.name("function"))
+    fn <- if (is_fn_def) tryCatch(eval(expr[[3]], globalenv()), error = function(err) NULL)
+    if (is.function(fn)) {
+      # A function definition: one check covers its body, including unused locals.
+      try(codetools::checkUsage(fn, name = "f", report = rec, all = TRUE, suppressParamUnused = TRUE), silent = TRUE)
+    } else {
+      # Other code: wrapped as a function body so codetools can walk it.
+      body <- as.call(list(as.name("{"), expr))
+      attr(body, "srcref") <- list(NULL, ref)
+      attr(body, "srcfile") <- attr(ref, "srcfile")
+      f <- eval(call("function", NULL, body))
+      environment(f) <- globalenv()
+      try(codetools::checkUsage(f, name = "script", report = rec, all = TRUE,
+        suppressLocalUnused = TRUE, suppressParamUnused = TRUE), silent = TRUE)
+    }
+    # Store lines relative to the statement's first line.
+    start <- ref[1]
+    vapply(raw, function(m) {
+      loc <- regmatches(m, regexec("\\(<text>:([0-9]+)(-[0-9]+)?\\)\\s*$", m))[[1]]
+      rel <- if (length(loc)) as.integer(loc[2]) - start else 0L
+      paste0(rel, "\x1f", sub("^[^ :]*: ", "", sub("\\s*\\(<text>:[0-9-]+\\)\\s*$", "", m)))
+    }, "", USE.NAMES = FALSE)
+  }
+  e$.ide_lint <- function(text, budget = 0.1) {
+    if (!requireNamespace("codetools", quietly = TRUE)) return("1")
+    exprs <- tryCatch(parse(text = text, keep.source = TRUE), error = function(err) NULL)
+    if (is.null(exprs) || !length(exprs)) return("1")
+    refs <- attr(exprs, "srcref")
+    lines <- strsplit(text, "\n", fixed = TRUE)[[1]]
+    cache <- e$.ide_lint_cache
+    if (length(cache) > 5000) { rm(list = ls(cache), envir = cache) }
+    # Names this file assigns at the top level, and whether its functions
+    # can't be known yet (packages it loads that aren't attached, or other
+    # files it sources).
+    assigned <- unlist(lapply(exprs, function(x) {
+      if (is.call(x) && as.character(x[[1]])[1] %in% c("<-", "=", "<<-") && length(x) == 3 && is.symbol(x[[2]])) as.character(x[[2]])
+    }))
+    pkgs <- unlist(lapply(exprs, function(x) {
+      if (is.call(x) && as.character(x[[1]])[1] %in% c("library", "require") && length(x) > 1) as.character(x[[2]])
+    }))
+    calls <- all.names(exprs)
+    unknown_ok <- any(c("source", "sys.source") %in% calls) ||
+      (length(pkgs) > 0 && any(!paste0("package:", pkgs) %in% search()))
+    out <- character(0)
+    t0 <- proc.time()[[3]]
+    done <- TRUE
+    for (i in seq_along(exprs)) {
+      ref <- refs[[i]]
+      key <- paste(c(ref[2], ref[4], lines[ref[1]:ref[3]]), collapse = "\n")
+      raw <- cache[[key]]
+      if (is.null(raw)) {
+        if (proc.time()[[3]] - t0 > budget) { done <- FALSE; break }
+        raw <- e$.ide_lint_one(exprs[[i]], ref)
+        assign(key, raw, envir = cache)
+      }
+      for (r in raw) {
+        parts <- strsplit(r, "\x1f", fixed = TRUE)[[1]]
+        m <- parts[2]
+        # Column names in dplyr/ggplot-style code look like undefined variables.
+        if (grepl("no visible binding for global variable", m, fixed = TRUE)) next
+        if (grepl("no visible global function definition", m, fixed = TRUE)) {
+          name <- sub("^.*definition for \\W*([A-Za-z0-9._]+)\\W*$", "\\1", m, perl = TRUE)
+          if (unknown_ok || name %in% assigned || exists(name, envir = globalenv())) next
+        }
+        out <- c(out, as.character(ref[1] + as.integer(parts[1])), m)
+      }
+    }
+    c(if (done) "1" else "0", out)
+  }
+
   # styler: NA if it isn't installed, "\x01<message>" on error.
   e$.ide_style <- function(text, scope = "tokens") {
     if (!requireNamespace("styler", quietly = TRUE)) return(NA_character_)

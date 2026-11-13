@@ -2,6 +2,7 @@ import { WebR, ChannelType } from 'webr';
 import { R_HELPERS } from './r-helpers';
 import { R_NOTEBOOK } from './r-notebook';
 import { R_INTEL } from './r-intel';
+import { setBoot } from './boot';
 import { WEBR_BASE_URL, mountBaseLibrary } from './webr-runtime';
 
 export type SessionEvent =
@@ -104,6 +105,7 @@ export class RSession {
         channelType: this.isolated ? ChannelType.SharedArrayBuffer : ChannelType.PostMessage,
         REnv: { R_HOME: '/usr/lib/R', R_ENABLE_JIT: '0', COLORTERM: 'truecolor' },
       });
+      setBoot({ label: 'Starting R' });
       await this.webR.init();
       if (gen !== this.generation) return;
       this.versionR = this.webR.versionR;
@@ -113,6 +115,7 @@ export class RSession {
       await this.webR.evalRVoid(R_NOTEBOOK);
       await this.webR.evalRVoid(R_INTEL);
       await this.setPlotSize(plotSize.width, plotSize.height);
+      setBoot({ label: 'Setting up the R session' });
       if (onInit) {
         try {
           await onInit();

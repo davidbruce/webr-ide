@@ -17,7 +17,8 @@ import { askText, confirmDialog, formatBytes, isDark, kbd, setThemePref, themePr
 import { Icon } from './Icon';
 import { openStorageInfo } from './StorageInfo';
 import { openShortcuts } from './Shortcuts';
-import { rKeyboardEnabled, setRKeyboardEnabled } from '../lib/rkeyboard';
+import { openSettings } from '../lib/settings';
+import { exportWorkspace, pickWorkspaceZip } from '../lib/workspace-zip';
 import { resetLayout } from './Workbench';
 import { EXAMPLES, EXAMPLE_GROUPS, Example } from '../lib/examples';
 import { openPackageBrowser } from '../lib/pkg-actions';
@@ -95,7 +96,6 @@ export function TopBar() {
   }
   const statusLabel_ = { works: 'Works', partial: 'Partly works', unsupported: 'Not in browser' } as const;
   const [storage, setStorage] = createSignal('');
-  const touchScreen = window.matchMedia('(pointer: coarse)').matches;
   let wsBtn!: HTMLButtonElement;
   let newBtn!: HTMLButtonElement;
 
@@ -317,6 +317,24 @@ export function TopBar() {
               <button class="menu-item" onClick={renameWorkspace}>
                 <Icon name="edit" /> Rename Workspace…
               </button>
+              <button
+                class="menu-item"
+                onClick={() => {
+                  setWsMenu(false);
+                  void exportWorkspace();
+                }}
+              >
+                <Icon name="download" /> Export as .zip
+              </button>
+              <button
+                class="menu-item"
+                onClick={() => {
+                  setWsMenu(false);
+                  pickWorkspaceZip();
+                }}
+              >
+                <Icon name="upload" /> Import from .zip…
+              </button>
               <button class="menu-item danger" onClick={removeWorkspace}>
                 <Icon name="trash" /> Delete Workspace…
               </button>
@@ -348,11 +366,15 @@ export function TopBar() {
               >
                 <Icon name="keyboard" /> Keyboard Shortcuts
               </button>
-              <Show when={touchScreen}>
-                <button class="menu-item" role="menuitemcheckbox" aria-checked={rKeyboardEnabled()} onClick={() => setRKeyboardEnabled(!rKeyboardEnabled())}>
-                  <Icon name={rKeyboardEnabled() ? 'check' : 'keyboard'} /> Experimental: R Keyboard (phones)
-                </button>
-              </Show>
+              <button
+                class="menu-item"
+                onClick={() => {
+                  setWsMenu(false);
+                  openSettings();
+                }}
+              >
+                <Icon name="grid" /> Settings…
+              </button>
               <button
                 class="menu-item"
                 onClick={() => {

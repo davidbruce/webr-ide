@@ -5,6 +5,10 @@ import { Modals } from './components/Modals';
 import { PresenterView } from './components/Presenter';
 import { StorageBanner, StorageInfo } from './components/StorageInfo';
 import { Shortcuts } from './components/Shortcuts';
+import { StartupCard } from './components/StartupCard';
+import { UpdateBanner } from './components/UpdateBanner';
+import { SettingsDialog } from './components/SettingsDialog';
+import { openSettings } from './lib/settings';
 import { PackageBrowser } from './components/PackageBrowser';
 import { consoleApi } from './components/Console';
 import { editor, initWorkspaces, openWorkspaceUI, setState, startR, state, restartR } from './lib/ide';
@@ -17,7 +21,8 @@ export function App() {
   createEffect(() => {
     const dark = isDark();
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1a1d22' : '#e8ecf1');
+    // Browser / status bar colour: the top bar's.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1a1d22' : '#eef1f5');
   });
 
   onMount(async () => {
@@ -42,6 +47,9 @@ export function App() {
     } else if (mod && e.altKey && e.code === 'KeyN') {
       e.preventDefault();
       editor()?.newFile();
+    } else if (mod && e.key === ',') {
+      e.preventDefault();
+      openSettings();
     } else if (e.ctrlKey && e.key === '2') {
       e.preventDefault();
       consoleApi?.focus();
@@ -99,6 +107,9 @@ export function App() {
         <StorageInfo />
         <StorageBanner />
         <PackageBrowser />
+        <StartupCard />
+        <UpdateBanner />
+        <SettingsDialog />
       </div>
     </Show>
   );

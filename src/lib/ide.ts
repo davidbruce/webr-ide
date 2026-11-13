@@ -2,6 +2,7 @@ import { createSignal, batch } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import * as fs from './opfs';
 import { invalidateText } from './text-cache';
+import { setBoot } from './boot';
 import { RSession, HOME, rString } from './r-session';
 import { toast } from './ui';
 import { setupPackages, captureInstalls } from './packages';
@@ -876,12 +877,16 @@ export function setPlotSizeHint(w: number, h: number) {
 export async function startR() {
   try {
     // The drive service worker must control the page before webR's worker starts.
+    setBoot({ label: 'Preparing' });
     await prepareDrive();
     await session.start(plotSize, initPackages);
     await session.setPlotSize(plotSize.width, plotSize.height);
+    setBoot({ label: 'Opening your workspace' });
     await attachWorkspaceToR(true);
   } catch (e) {
     toast(`webR failed to start: ${e}`, 'error');
+  } finally {
+    setBoot(null);
   }
 }
 
@@ -898,10 +903,13 @@ export async function restartR() {
   try {
     await session.restart(plotSize, initPackages);
     await session.setPlotSize(plotSize.width, plotSize.height);
+    setBoot({ label: 'Opening your workspace' });
     await attachWorkspaceToR(false);
     toast('R session restarted');
   } catch (e) {
     toast(`Restart failed: ${e}`, 'error');
+  } finally {
+    setBoot(null);
   }
 }
 

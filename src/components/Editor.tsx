@@ -29,6 +29,8 @@ import { outline, rRegions, styleCode, findDefinitions, symbolAt, type OutlineIt
 import { installPackages } from '../lib/pkg-actions';
 import { openShortcuts } from './Shortcuts';
 import { openFindInFiles } from './SearchPanel';
+import { desktopEditing } from '../lib/input-mode';
+import { settings, openSettings } from '../lib/settings';
 
 interface Tab {
   key: string;
@@ -67,6 +69,7 @@ export function EditorPane() {
     const key = `t${++keySeq}`;
     const language = languageFor(name);
     const model = monaco.editor.createModel(content, language, monaco.Uri.parse(`inmemory://webr-ide/${key}/${encodeURIComponent(name)}`));
+    model.updateOptions({ tabSize: settings.tabSize, indentSize: settings.tabSize, insertSpaces: true });
     models.set(key, model);
     savedVersion.set(key, model.getAlternativeVersionId());
     model.onDidChangeContent(() => {
@@ -767,6 +770,7 @@ export function EditorPane() {
     action('r.findInFiles', 'Find in Files…', [K.CtrlCmd | K.Shift | C.KeyF], () => openFindInFiles(ed.getModel()?.getValueInRange(ed.getSelection()!) ?? ''));
     action('r.shortcuts', 'Keyboard Shortcuts', [K.Alt | K.Shift | C.KeyK], openShortcuts);
     action('r.focusConsole', 'Move Focus to Console', [], () => consoleApi?.focus());
+    action('r.settings', 'Settings…', [K.CtrlCmd | C.Comma], openSettings);
     action('r.palette', 'Command Palette', [K.CtrlCmd | K.Shift | C.KeyP], palette);
     // F1 is R help here (as in RStudio); the palette is ⌘⇧P.
     monaco.editor.addKeybindingRule({ keybinding: C.F1, command: '-editor.action.quickCommand' });
@@ -803,24 +807,25 @@ export function EditorPane() {
       opener.dispose();
     });
 
-    // Show the suggestion details (signature and help) beside the list by
-    // default with a mouse; ⌃Space hides them. Phones keep the compact list.
-    if (!window.matchMedia('(pointer: coarse)').matches) {
+    // Desktop style (mouse/trackpad, or an iPad with a keyboard): suggestion
+    // details (signature and help) open beside the list, and no separate
+    // argument-hint popup. Touch typing keeps the compact list and the popup.
+    createEffect(() => {
+      const desk = desktopEditing();
+      ed.updateOptions({ parameterHints: { enabled: !desk } });
       try {
         const widget = (ed.getContribution('editor.contrib.suggestController') as any)?.widget?.value;
-        widget?._storageService?.store('expandSuggestionDocs', true, 0 /* profile */, 0 /* user */);
+        widget?._storageService?.store('expandSuggestionDocs', desk, 0 /* profile */, 0 /* user */);
       } catch (e) {
-        console.warn('could not expand suggestion details', e);
+        console.warn('could not set suggestion details', e);
       }
-    }
+    });
 
     createEffect(() => monaco.editor.setTheme(isDark() ? 'rstudio-dark' : 'rstudio-light'));
     // Touch screens: allow scrolling past the end, so the last lines can be
     // brought up above the on-screen keyboard.
     const coarse = window.matchMedia('(pointer: coarse)');
-    // The separate argument-hint popup only on touch screens; with a mouse,
-    // argument names and their help are in the suggestion list.
-    const scrollPast = () => ed.updateOptions({ scrollBeyondLastLine: coarse.matches, parameterHints: { enabled: coarse.matches } });
+    const scrollPast = () => ed.updateOptions({ scrollBeyondLastLine: coarse.matches });
     scrollPast();
     coarse.addEventListener('change', scrollPast);
     onCleanup(() => coarse.removeEventListener('change', scrollPast));
@@ -846,14 +851,24 @@ export function EditorPane() {
       onCleanup(() => vv.removeEventListener('resize', onViewport));
     }
 
-    // Phones: a narrower gutter and slightly smaller text leave room for code.
-    createEffect(() =>
-      ed.updateOptions(
-        phone()
-          ? { fontSize: 13, lineHeight: 19, lineNumbersMinChars: 2, lineDecorationsWidth: 6, folding: false, glyphMargin: false }
-          : { fontSize: 14, lineHeight: 21, lineNumbersMinChars: 5, lineDecorationsWidth: 10, folding: true },
-      ),
-    );
+    // Settings. Phones: a narrower gutter and slightly smaller text leave room for code.
+    createEffect(() => {
+      const size = settings.editorFontSize - (phone() ? 1 : 0);
+      const lineHeight = Math.round(size * (phone() ? 1.46 : 1.5));
+      ed.updateOptions({
+        fontSize: size,
+        lineHeight,
+        wordWrap: settings.wordWrap ? 'on' : 'off',
+        hover: { enabled: settings.hoverHelp ? 'on' : 'off' },
+        ...(phone()
+          ? { lineNumbersMinChars: 2, lineDecorationsWidth: 6, folding: false, glyphMargin: false }
+          : { lineNumbersMinChars: 5, lineDecorationsWidth: 10, folding: true }),
+      });
+    });
+    createEffect(() => {
+      const tabSize = settings.tabSize;
+      for (const m of models.values()) m.updateOptions({ tabSize, indentSize: tabSize, insertSpaces: true });
+    });
     // Lock the editor while a package downloads/installs.
     createEffect(() => ed.updateOptions({ readOnly: isInstalling(), readOnlyMessage: { value: 'Editing is paused while a package installs.' } }));
   });

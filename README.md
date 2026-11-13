@@ -3,7 +3,8 @@
 An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to WebAssembly). It runs entirely in the browser and is designed for iPad Safari. It can be installed as a PWA.
 
 - **Script:** [Monaco](https://microsoft.github.io/monaco-editor/) editor with tabs, R syntax highlighting, and completions from R itself
-- **Code intelligence:** syntax errors underlined as you type (an unclosed bracket points at the bracket); argument hints while typing a call, with the current argument highlighted; hovering a function shows its usage and help summary; F1 opens its help; F2 or ⌘-click jumps to where a function is defined in your workspace
+- **Code intelligence:** syntax errors underlined as you type (an unclosed bracket points at the bracket); suggestions show each function's usage and help, and each argument's description; typing `,` in a call offers the arguments not yet used; F1 opens help; F2 or ⌘-click jumps to where a function is defined in your workspace. With a mouse, trackpad or iPad keyboard the details sit beside the suggestions; when typing on a touch screen a small argument hint appears instead
+- **Problems:** yellow underlines for unknown functions (e.g. `mena(x)`), arguments a function doesn't take, and variables assigned but never used inside functions, from R's `codetools`. Each statement is checked once and cached, so after an edit only that statement is rechecked (about 10 ms); a first check of a long file runs in ~0.1 s slices so it never holds up code you run. Undefined-variable warnings are left out because dplyr/ggplot2 column names would trigger them
 - **Outline:** the ☰ button (⌘⇧O) lists `# Section ----` comments, functions, Quarto headings and chunks, and jumps to them
 - **Formatting:** ⌘⇧A reformats the selection, script or chunk with [styler](https://styler.r-lib.org) (installed on first use), ⌘I reindents, ⌘/ (or RStudio's ⌘⇧C) comments or uncomments lines
 - **Find in files:** the sidebar's **Search** tab (⌘⇧F) searches the workspace, including unsaved tabs, with match case, whole word and regex, and replaces in one file or all
@@ -12,7 +13,9 @@ An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to W
 - **Environment / History:** objects grouped as Data, Values, and Functions; expandable `str()` views; `View()` data viewer; command history with *To Console* and *To Source*
 - **Plots / Packages / Help:** plot history, an **Expand** button that re-renders the plot full size in a closable window, PNG save and download, package install and attach, and R help pages
 - **Files sidebar:** create, rename, delete, upload, download, and drag-and-drop; import CSV files; source scripts
-- **Workspaces:** each workspace has its own files, history, open tabs, and saved environment (`.RData`)
+- **Workspaces:** each workspace has its own files, history, open tabs, and saved environment (`.RData`). **Export as .zip** (workspace menu) downloads all of it; **Import from .zip** makes a new workspace from one, for backups or moving to another device
+- **Settings** (⌘, or the workspace menu): theme, editor and console font size, tab width, line wrapping, help on hover, the code checks, and the R keyboard on phones
+- **App:** a progress card while R starts; after the first visit it starts offline. When a new version is published a banner offers **Reload**, which saves open files and the environment first
 
 ## Quarto notebooks
 

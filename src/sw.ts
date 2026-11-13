@@ -14,7 +14,12 @@ self.addEventListener('fetch', (e) => {
   handleDriveFetch(e);
 });
 
-self.skipWaiting();
+// A new version waits until the page asks it to take over (the "Reload"
+// button), so an open session never has its files swapped underneath it.
+// The very first install has nothing to wait for and takes control at once.
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'SKIP_WAITING') void self.skipWaiting();
+});
 clientsClaim();
 cleanupOutdatedCaches();
 

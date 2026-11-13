@@ -8,6 +8,7 @@
 // using ordinary async fetches that the service worker caches.
 
 import type { WebR } from 'webr';
+import { setBoot, bootProgress } from './boot';
 
 /** URL of the self-hosted runtime, e.g. https://host/app/webr/0.6.1/ */
 export const WEBR_BASE_URL = new URL(__WEBR_PREFIX__, document.baseURI).href;
@@ -67,11 +68,14 @@ export async function mountBaseLibrary(webR: WebR): Promise<{ mounted: number; f
   await mkdirs(webR, [...dirs]);
 
   // Download + decompress in parallel; mounts go through the worker one at a time.
+  setBoot({ label: "Loading R's base library", done: 0, total: manifest.images.length });
+  let fetched = 0;
   const images = await pool(manifest.images, 6, async (p) => {
     try {
       const [metaRes, dataRes] = await Promise.all([fetchOk(`${vfs}${p}.js.metadata`), fetchOk(`${vfs}${p}.data.gz`)]);
       const metadata = await metaRes.json();
       const data = await gunzip(dataRes);
+      bootProgress(++fetched, manifest.images.length);
       return { p, metadata, data };
     } catch (e) {
       console.warn('base library image failed:', p, e);
