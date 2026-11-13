@@ -3,7 +3,7 @@
 // undo/redo and Run. The buttons never take focus, so the keyboard stays up.
 
 import { createSignal, For, onCleanup } from 'solid-js';
-import { editor, KeyAction } from '../lib/ide';
+import { editor, KeyAction, debugCommand, type DebugCommand } from '../lib/ide';
 import { consoleApi } from './Console';
 import { Icon } from './Icon';
 import { rKeyboardActive, rKeyboardEnabled, useSystemKeyboard } from '../lib/rkeyboard';
@@ -115,6 +115,37 @@ function KeyButton(p: { k: Key | 'run'; class?: string; title: string; icon: str
     >
       <Icon name={p.icon} size={20} />
     </button>
+  );
+}
+
+const DEBUG_KEYS: { cmd: DebugCommand; title: string; icon: string; class?: string }[] = [
+  { cmd: 'next', title: 'Next line', icon: 'step-over' },
+  { cmd: 'step', title: 'Step into the function call', icon: 'step-into' },
+  { cmd: 'finish', title: 'Finish this function', icon: 'step-out' },
+  { cmd: 'continue', title: 'Continue', icon: 'continue', class: 'run' },
+  { cmd: 'stop', title: 'Stop debugging', icon: 'stop', class: 'danger' },
+];
+
+/** Phones, while R is paused: the debugger's buttons, above the bottom bar. */
+export function DebugKeys() {
+  return (
+    <div class="keybar debug-keys" role="toolbar" aria-label="Debugger">
+      <For each={DEBUG_KEYS}>
+        {(k) => (
+          <button
+            type="button"
+            class={`keybar-key ${k.class ?? ''}`}
+            title={k.title}
+            aria-label={k.title}
+            tabindex="-1"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => debugCommand(k.cmd)}
+          >
+            <Icon name={k.icon} size={20} />
+          </button>
+        )}
+      </For>
+    </div>
   );
 }
 

@@ -151,7 +151,8 @@ export function scanR(text: string): { open: Open[]; quoteAt: number; lineDepth:
 
 /** Run an R helper when R is free; null if R stays busy or fails. */
 async function ask(code: string, wait = 800): Promise<string[] | null> {
-  if (session.status !== 'ready' || !(await session.waitIdle(wait))) return null;
+  // While paused in the debugger R still answers (help, signatures, values).
+  if (session.status !== 'ready' || (!state.debug && !(await session.waitIdle(wait)))) return null;
   try {
     return await session.strings(code);
   } catch {
@@ -226,22 +227,82 @@ async function lintModel(model: monaco.editor.ITextModel) {
   }
   const version = model.getVersionId();
   const markers: monaco.editor.IMarkerData[] = [];
-  for (const region of rRegions(model)) {
+  const regions = rRegions(model);
+  // Functions defined elsewhere aren't "unknown": in other chunks of this
+  // document, or in other R / Quarto files of the workspace.
+  const known = new Set([...regions.flatMap((r) => assignedNames(r.text)), ...(await workspaceFunctions(model))]);
+  const knownR = `c(${[...known].map(rString).join(',')})`;
+  for (const region of regions) {
     if (region.text.split('\n').length > LINT_MAX_LINES) continue;
     for (;;) {
       if (!session.idle) {
         pendingLints.add(model);
         return;
       }
-      const res = await ask(`.ide_lint(${rString(region.text)}, 0.1)`, 0);
+      const res = await ask(`.ide_lint(${rString(region.text)}, 0.1, ${knownR})`, 0);
       if (!res || model.isDisposed() || model.getVersionId() !== version) return;
+      if (res[0] !== '1') {
+        // Partial: the next call returns this region's full list.
+        await new Promise((r) => setTimeout(r, 30)); // let queued work (your code) run first
+        continue;
+      }
       for (let i = 1; i + 1 < res.length; i += 2) markers.push(lintMarker(model, region.line + Number(res[i]) - 1, res[i + 1]));
-      if (res[0] === '1') break;
-      markers.length = 0; // partial: the next call returns this region's full list
-      await new Promise((r) => setTimeout(r, 30)); // let queued work (your code) run first
+      break;
     }
   }
   if (model.getVersionId() === version) monaco.editor.setModelMarkers(model, LINT_OWNER, markers);
+}
+
+const ASSIGN = /^\s*([A-Za-z.][\w.]*|`[^`]+`)\s*(?:<<?-|=(?!=))/;
+
+/** Names assigned at the start of a line (top level or not; good enough here). */
+function assignedNames(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = ASSIGN.exec(line);
+    if (m) out.push(m[1].replace(/^`|`$/g, ''));
+  }
+  return out;
+}
+
+const fileFunctions = new Map<string, { stamp: string; names: string[] }>();
+
+/** Functions defined in the workspace's other R / Quarto files (open tabs with their edits). */
+async function workspaceFunctions(current: monaco.editor.ITextModel): Promise<string[]> {
+  const names = new Set<string>();
+  const defs = (text: string) => {
+    for (const line of text.split('\n')) {
+      const m = FUNCTION.exec(line);
+      if (m) names.add(m[1].replace(/^`|`$/g, ''));
+    }
+  };
+  const openUris = new Set<string>();
+  for (const m of monaco.editor.getModels()) {
+    if (m === current || !['r', 'quarto'].includes(m.getLanguageId())) continue;
+    openUris.add(m.uri.toString());
+    defs(m.getValue());
+  }
+  for (const node of fs.flattenTree(state.tree)) {
+    if (node.kind !== 'file' || !/\.(r|qmd|rmd)$/i.test(node.name) || (node.size ?? 0) > 2_000_000) continue;
+    const stamp = `${node.size}:${node.modified}`;
+    let hit = fileFunctions.get(node.path);
+    if (!hit || hit.stamp !== stamp) {
+      try {
+        const text = await cachedText(state.workspace, node);
+        const found: string[] = [];
+        for (const line of text.split('\n')) {
+          const m = FUNCTION.exec(line);
+          if (m) found.push(m[1].replace(/^`|`$/g, ''));
+        }
+        hit = { stamp, names: found };
+        fileFunctions.set(node.path, hit);
+      } catch {
+        continue;
+      }
+    }
+    hit.names.forEach((n) => names.add(n));
+  }
+  return [...names];
 }
 
 /** A codetools message → a friendlier warning on the name it's about. */
@@ -647,6 +708,13 @@ const hoverProvider: monaco.languages.HoverProvider = {
     if (!isRCode(model, position.lineNumber)) return null;
     const sym = symbolAt(model, position);
     if (!sym) return null;
+    // Paused: a variable's value in the selected frame.
+    const frame = state.debug?.stack[state.debug.frame];
+    if (frame && !sym.name.includes('::')) {
+      const value = await ask(`.ide_debug_value(${rString(sym.name)}, ${frame.index}L)`, 0);
+      if (value?.length)
+        return { range: sym.range, contents: [{ value: `**${sym.name}** in \`${frame.call}\`` }, { value: '```\n' + value.join('\n') + '\n```' }] };
+    }
     const sig = await signatureOf(sym.name);
     if (!sig) return null;
     const help = await helpFor('summary', sym.name);

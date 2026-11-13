@@ -149,10 +149,17 @@ export function TopBar() {
     if (state.rStatus === 'starting') return 'Starting R…';
     if (state.rStatus === 'error') return 'R failed';
     if (state.rStatus === 'closed') return 'R stopped';
+    if (state.debug) return 'Debugging';
     return state.busy ? 'Running' : 'Ready';
   };
   const statusKind = () =>
-    state.rStatus === 'error' || state.rStatus === 'closed' ? 'error' : state.rStatus === 'starting' || state.busy || state.switching || state.attaching ? 'busy' : 'ok';
+    state.rStatus === 'error' || state.rStatus === 'closed'
+      ? 'error'
+      : state.debug
+        ? 'debug'
+        : state.rStatus === 'starting' || state.busy || state.switching || state.attaching
+          ? 'busy'
+          : 'ok';
 
   const newItems: { label: string; name: string; content: string }[] = [
     { label: 'R Script', name: 'Untitled.R', content: '' },

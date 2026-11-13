@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
-import { state, setState, editor, phone, showPane, PhoneTab } from '../lib/ide';
+import { state, setState, editor, phone, showPane, stacked, PhoneTab } from '../lib/ide';
 import { Icon } from './Icon';
-import { KeyBar, keyBarTarget, keyboardUp } from './KeyBar';
+import { KeyBar, DebugKeys, keyBarTarget, keyboardUp } from './KeyBar';
 import { RKeyboard } from './RKeyboard';
 import { rKeyboardActive } from '../lib/rkeyboard';
 import { EditorPane } from './Editor';
@@ -94,9 +94,11 @@ export function Workbench() {
 
   // Phones show one pane at a time (the bottom tabs pick which), using the
   // same mechanism as zooming a pane; the Files tab shows the sidebar instead.
+  // Stacked (iPad split view): the Code tab shows the script and console together.
+  const codeTab = () => stacked() && (state.phoneTab === 'script' || state.phoneTab === 'console');
   createEffect(
-    on([phone, () => state.phoneTab], ([isPhone, tab], prev) => {
-      if (isPhone) setState('zoomed', tab === 'files' ? 'script' : tab);
+    on([phone, () => state.phoneTab, stacked], ([isPhone, tab], prev) => {
+      if (isPhone) setState('zoomed', tab === 'files' ? 'script' : codeTab() ? null : tab);
       else if (prev?.[0]) setState('zoomed', null);
     }),
   );
@@ -104,10 +106,10 @@ export function Workbench() {
 
   const z = () => state.zoomed;
   const leftVisible = () => !z() || z() === 'script' || z() === 'console';
-  const rightVisible = () => !z() || z() === 'env' || z() === 'plots';
+  const rightVisible = () => (!z() && !codeTab()) || z() === 'env' || z() === 'plots';
 
   const colStyle = () => {
-    if (z()) return { 'grid-template-columns': '1fr' };
+    if (z() || codeTab()) return { 'grid-template-columns': '1fr' };
     const l = layout().left;
     return { 'grid-template-columns': `minmax(0, ${l}fr) var(--gutter) minmax(0, ${1 - l}fr)` };
   };
@@ -117,7 +119,7 @@ export function Workbench() {
   };
 
   return (
-    <div class="workbench" classList={{ narrow: narrow(), phone: phone(), 'phone-files': phone() && state.phoneTab === 'files', 'sidebar-open': sidebarShown() }}>
+    <div class="workbench" classList={{ narrow: narrow(), phone: phone(), stacked: stacked(), 'phone-files': phone() && state.phoneTab === 'files', 'sidebar-open': sidebarShown() }}>
       <div
         class="sidebar-wrap"
         classList={{ open: sidebarShown() }}
@@ -156,7 +158,7 @@ export function Workbench() {
         </div>
         <Gutter
           dir="col"
-          hidden={!!z()}
+          hidden={!!z() || codeTab()}
           label="Resize columns"
           onDrag={(x) => {
             const r = quad.getBoundingClientRect();
@@ -204,6 +206,9 @@ const PHONE_TABS: { id: PhoneTab; label: string; icon: string }[] = [
 export function PhoneTabs() {
   return (
     <Show when={phone()}>
+      <Show when={state.debug}>
+        <DebugKeys />
+      </Show>
       <Show when={!keyBarTarget()} fallback={<Show when={rKeyboardActive()} fallback={<KeyBar />}><RKeyboard /></Show>}>
         <Show when={!keyboardUp()}>
           <PaneTabs />
@@ -214,16 +219,20 @@ export function PhoneTabs() {
 }
 
 function PaneTabs() {
+  // Stacked: one "Code" tab for the script and console.
+  const tabs = () =>
+    stacked() ? PHONE_TABS.filter((t) => t.id !== 'console').map((t) => (t.id === 'script' ? { ...t, label: 'Code' } : t)) : PHONE_TABS;
+  const isActive = (id: PhoneTab) => state.phoneTab === id || (stacked() && id === 'script' && state.phoneTab === 'console');
   return (
     <>
       <nav class="phone-tabs" role="tablist" aria-label="Panes">
-        <For each={PHONE_TABS}>
+        <For each={tabs()}>
           {(t) => (
             <button
               role="tab"
               class="phone-tab"
-              classList={{ active: state.phoneTab === t.id }}
-              aria-selected={state.phoneTab === t.id}
+              classList={{ active: isActive(t.id) }}
+              aria-selected={isActive(t.id)}
               onClick={() => showPane(t.id)}
             >
               <span class="phone-tab-icon">

@@ -2,7 +2,7 @@ import { createEffect, getOwner, onCleanup, onMount, runWithOwner, Show } from '
 import { settings } from '../lib/settings';
 import { WTerm } from '@wterm/dom';
 import '@wterm/dom/css';
-import { session, state, completions, restartR, rDisplayPath, rRoot, editor } from '../lib/ide';
+import { session, state, completions, restartR, rDisplayPath, rRoot, editor, debugCommand, setDebugOnError } from '../lib/ide';
 import { flattenTree } from '../lib/opfs';
 import { Icon } from './Icon';
 import { confirmDialog, kbd } from '../lib/ui';
@@ -502,7 +502,35 @@ export function ConsolePane() {
         }
         actions={
           <>
-            <Show when={state.busy && state.rStatus === 'ready'}>
+            <Show when={state.debug}>
+              <div class="debug-bar" role="toolbar" aria-label="Debugger">
+                <button class="tb-btn" title={`Next line (F10)`} onClick={() => debugCommand('next')}>
+                  <Icon name="step-over" />
+                </button>
+                <button class="tb-btn" title={`Step into the function call (${kbd('shift+F4')})`} onClick={() => debugCommand('step')}>
+                  <Icon name="step-into" />
+                </button>
+                <button class="tb-btn" title={`Finish this function (${kbd('shift+F6')})`} onClick={() => debugCommand('finish')}>
+                  <Icon name="step-out" />
+                </button>
+                <button class="tb-btn run" title={`Continue (${kbd('shift+F5')})`} onClick={() => debugCommand('continue')}>
+                  <Icon name="continue" />
+                </button>
+                <button class="tb-btn danger" title={`Stop debugging (${kbd('shift+F8')})`} onClick={() => debugCommand('stop')}>
+                  <Icon name="stop" />
+                </button>
+              </div>
+            </Show>
+            <button
+              class="tb-btn"
+              classList={{ active: state.debugOnError }}
+              aria-pressed={state.debugOnError}
+              title={state.debugOnError ? 'Debug on error: on (pauses where an error happens)' : 'Debug on error: off'}
+              onClick={() => void setDebugOnError(!state.debugOnError)}
+            >
+              <Icon name="bug" />
+            </button>
+            <Show when={state.busy && state.rStatus === 'ready' && !state.debug}>
               <button class="tb-btn danger" onClick={() => session.interrupt()} title="Interrupt R (Ctrl+C)">
                 <Icon name="stop" />
               </button>

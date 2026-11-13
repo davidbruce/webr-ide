@@ -25,8 +25,7 @@ local({
     invisible(NULL)
   }
 
-  e$.ide_env <- function() {
-    env <- globalenv()
+  e$.ide_env <- function(env = globalenv()) {
     out <- character(0)
     for (n in ls(env)) {
       x <- tryCatch(get(n, envir = env), error = function(err) NULL)
@@ -55,8 +54,10 @@ local({
     out
   }
 
-  e$.ide_str <- function(name) {
-    x <- get(name, envir = globalenv())
+  # frame > 0: a frame of the paused call stack (see .ide_debug_stack).
+  e$.ide_str <- function(name, frame = 0L) {
+    env <- if (frame > 0L) e$.ide_debug_frame(frame) else globalenv()
+    x <- get(name, envir = env)
     utils::capture.output(utils::str(x, give.attr = FALSE, vec.len = 3, list.len = 200))
   }
 
@@ -297,6 +298,153 @@ local({
 
   # Leave a workspace without touching its files (drive mode: the mounted
   # folder IS the user's files, so never unlink it).
+  # ---- debugging ---------------------------------------------------------------
+  # While R waits at a Browse[n]> prompt the IDE can still evaluate R; the
+  # paused calls are then the first frames on the stack, followed by webR's
+  # own evaluation frames.
+
+  # Index of the last paused (user) frame, as seen from the caller's caller.
+  e$.ide_debug_user_n <- function(n) {
+    webr_ns <- tryCatch(asNamespace("webr"), error = function(err) NULL)
+    for (i in seq_len(n)) {
+      f <- sys.function(i)
+      env <- environment(f)
+      if (!is.null(env) && !is.null(webr_ns) && identical(topenv(env), webr_ns)) return(i - 1L)
+    }
+    n
+  }
+  e$.ide_debug_frame <- function(i) sys.frame(i)
+
+  # The paused call stack: (frame index, call, file, line) per frame of code
+  # you wrote, outermost first. R's own functions (eval, stop, …), the
+  # breakpoint machinery (.doTrace), packages and the IDE's helpers are left out. The line is where the frame
+  # called the next one; the innermost frame's current line comes from R's
+  # "debug at" output instead.
+  e$.ide_debug_stack <- function() {
+    n <- e$.ide_debug_user_n(sys.nframe() - 1L)
+    if (n < 1L) return(character(0))
+    calls <- sys.calls()
+    helpers <- environment(sys.function())
+    keep <- Filter(function(i) {
+      env <- environment(sys.function(i))
+      # Yours: not a primitive, not from R or a package, not the IDE's helpers.
+      !is.null(env) && !identical(env, helpers) && identical(topenv(env), globalenv())
+    }, seq_len(n))
+    out <- character(0)
+    for (i in keep) {
+      call <- gsub("\\s+", " ", paste(deparse(calls[[i]], width.cutoff = 80L, nlines = 2L), collapse = " "))
+      if (nchar(call) > 80) call <- paste0(substr(call, 1, 77), "...")
+      file <- ""
+      line <- ""
+      # The first later call with a source reference was made from this frame.
+      for (j in seq.int(i + 1L, length.out = max(0L, n - i))) {
+        ref <- attr(calls[[j]], "srcref")
+        if (!is.null(ref)) {
+          f <- utils::getSrcFilename(ref, full.names = TRUE)
+          if (length(f) && nzchar(f[1])) {
+            file <- f[1]
+            line <- as.character(ref[1])
+          }
+          break
+        }
+      }
+      out <- c(out, as.character(i), call, file, line)
+    }
+    out
+  }
+
+  # Variables of paused frame i, like .ide_env().
+  e$.ide_debug_env <- function(i) e$.ide_env(sys.frame(i))
+
+  # Lines (of code in 'text') that are inside a function, where R can stop.
+  e$.ide_bp_valid <- function(text, lines) {
+    pd <- tryCatch(utils::getParseData(parse(text = text, keep.source = TRUE)), error = function(err) NULL)
+    if (is.null(pd) || !length(lines)) return(integer(0))
+    fns <- pd[pd$token == "FUNCTION", "parent"]
+    ranges <- pd[pd$id %in% fns, c("line1", "line2")]
+    as.integer(Filter(function(l) any(l >= ranges$line1 & l <= ranges$line2), lines))
+  }
+
+  # Breakpoints set in the editor, by file (normalized path) -> lines.
+  e$.ide_bps <- list()
+  e$.ide_set_breakpoints <- function(file, lines) {
+    e$.ide_bps[[normalizePath(file, mustWork = FALSE)]] <- as.integer(lines)
+    invisible(NULL)
+  }
+
+  # Like source(), but sets the editor's breakpoints in each function as soon
+  # as it's defined, so code later in the same file stops at them too.
+  e$.ide_debug_source <- function(file, echo = FALSE) {
+    lines <- e$.ide_bps[[normalizePath(file, mustWork = FALSE)]]
+    if (!length(lines)) return(invisible(source(file, echo = echo, keep.source = TRUE)))
+    exprs <- parse(file, keep.source = TRUE)
+    refs <- attr(exprs, "srcref")
+    for (i in seq_along(exprs)) {
+      if (echo) cat(paste0(c("> ", rep("+ ", max(0, refs[[i]][3] - refs[[i]][1]))), as.character(refs[[i]]), collapse = "\n"), "\n", sep = "")
+      res <- withVisible(eval(exprs[[i]], globalenv()))
+      if (echo && res$visible) print(res$value)
+      r <- refs[[i]]
+      for (l in lines[lines >= r[1] & lines <= r[3]])
+        try(suppressMessages(utils::setBreakpoint(file, l, envir = globalenv(), verbose = FALSE)), silent = TRUE)
+    }
+    invisible(NULL)
+  }
+
+  # Apply the editor's breakpoints for 'file' to functions already defined
+  # from it (an earlier Source), so changes take effect straight away: earlier
+  # breakpoints in those functions are removed, then 'lines' are set.
+  e$.ide_apply_breakpoints <- function(file, lines) {
+    e$.ide_set_breakpoints(file, lines)
+    base <- basename(file)
+    for (n in ls(globalenv(), all.names = TRUE)) {
+      f <- get(n, envir = globalenv())
+      if (!inherits(f, "functionWithTrace")) next
+      ref <- attr(f@original, "srcref")
+      if (!is.null(ref) && identical(basename(utils::getSrcFilename(ref)), base))
+        try(suppressMessages(untrace(n, where = globalenv())), silent = TRUE)
+    }
+    for (l in lines) try(suppressMessages(utils::setBreakpoint(file, l, envir = globalenv(), verbose = FALSE)), silent = TRUE)
+    invisible(NULL)
+  }
+
+  # A paused frame's function, for a read-only view when it has no file
+  # (typed in the console, or from a package): name, source, first line of
+  # its source reference ("" if none, i.e. deparsed).
+  e$.ide_debug_fun_view <- function(i) {
+    f <- sys.function(i)
+    if (inherits(f, "functionWithTrace")) f <- f@original
+    ref <- attr(f, "srcref")
+    name <- paste(deparse(sys.call(i)[[1]], nlines = 1L), collapse = "")
+    if (!is.null(ref)) return(c(name, paste(as.character(ref), collapse = "\n"), as.character(ref[1])))
+    c(name, paste(deparse(f), collapse = "\n"), "")
+  }
+
+  # A variable's structure as seen from paused frame i (for hover), or nothing.
+  e$.ide_debug_value <- function(name, i) {
+    env <- sys.frame(i)
+    if (!exists(name, envir = env)) return(character(0))
+    x <- get(name, envir = env)
+    if (is.function(x)) return(character(0))
+    utils::head(utils::capture.output(utils::str(x, give.attr = FALSE, vec.len = 4, list.len = 20, max.level = 2)), 25)
+  }
+
+  # As in RStudio: source a file with the editor's breakpoints set.
+  e$debugSource <- function(file, echo = FALSE) e$.ide_debug_source(file, echo)
+
+  # "Debug on error": pause in the frame where the error happened.
+  e$.ide_on_error <- function() {
+    n <- sys.nframe() - 1L
+    i <- n
+    while (i > 1L && identical(topenv(environment(sys.function(i))), baseenv())) i <- i - 1L
+    if (i < 1L) return(invisible(NULL))
+    message("Paused where the error happened, in ", paste(deparse(sys.call(i), nlines = 1L), collapse = ""))
+    eval(quote(browser()), sys.frame(i))
+  }
+  e$.ide_debug_on_error <- function(on) {
+    options(error = if (isTRUE(on)) quote(.ide_on_error()) else NULL)
+    invisible(NULL)
+  }
+
   # The workspace's .Rprofile, then .First() if it defines one, as R's start-up
   # does. renv's activation (from a desktop renv project) is skipped: it would
   # try to bootstrap renv and replace the library; the IDE checks renv.lock

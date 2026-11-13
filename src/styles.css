@@ -3845,3 +3845,95 @@ body.resizing-row * {
 .modal-backdrop.prompt-backdrop {
   z-index: 300;
 }
+
+/* Narrow panes: the tab strip scrolls sideways instead of hiding tabs under
+   the pane's buttons. */
+.pane-tabs {
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+.pane-tab {
+  flex: none;
+}
+.pane-actions {
+  flex: none;
+}
+/* Stacked (iPad split view): the script/console splitter stays, to resize. */
+.workbench.phone.stacked .column > .gutter-row:not(.hidden) {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- debugger */
+.monaco-editor .bp-dot {
+  background: #e5484d;
+  border-radius: 50%;
+  width: 10px !important;
+  height: 10px !important;
+  margin: 5px 0 0 5px;
+}
+.monaco-editor .bp-dot.inactive {
+  background: transparent;
+  border: 2px solid #e5484d;
+  opacity: 0.6;
+}
+.monaco-editor .bp-line-number {
+  color: #e5484d !important;
+  font-weight: 700;
+}
+.monaco-editor .bp-line-number.inactive {
+  font-weight: 400;
+  text-decoration: line-through;
+}
+.monaco-editor .debug-line {
+  background: color-mix(in srgb, #f5c400 28%, transparent);
+}
+.monaco-editor .debug-arrow::before {
+  content: '▶';
+  display: block;
+  color: #d29b00;
+  font-size: 12px;
+  line-height: inherit;
+  padding-left: 3px;
+}
+.debug-bar {
+  display: flex;
+  gap: 2px;
+  padding: 0 4px;
+  margin-right: 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #f5c400 22%, transparent);
+}
+.debug-bar .tb-btn.run {
+  color: var(--ok);
+}
+.r-status.debug .dot {
+  background: #d29b00;
+}
+.env-frame {
+  max-width: 60%;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* The debugger's row on phones sits above the tab bar / key bar. */
+.keybar.debug-keys {
+  height: 48px;
+  padding-bottom: 3px;
+  background: color-mix(in srgb, #f5c400 18%, var(--bg-topbar));
+}
+.keybar.debug-keys .keybar-key.run {
+  color: var(--ok);
+}
+.keybar.debug-keys .keybar-key.danger {
+  color: var(--danger);
+}

@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
-import { state, setState, refreshEnv, strOf, session, saveEnvironmentImage, clearHistory, editor, EnvEntry } from '../lib/ide';
+import { state, setState, refreshEnv, strOf, session, saveEnvironmentImage, clearHistory, editor, EnvEntry, loadDebugFrame } from '../lib/ide';
 import { confirmDialog, kbd, isMac } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
@@ -28,9 +28,11 @@ function EnvironmentView() {
   const [filter, setFilter] = createSignal('');
   const [expanded, setExpanded] = createSignal<Record<string, string[] | undefined>>({});
 
+  // Paused in the debugger: the selected frame's variables.
+  const entries = () => (state.debug ? state.debugEnv : state.env);
   const groups = createMemo(() => {
     const f = filter().toLowerCase();
-    const items = state.env.filter((e) => !f || e.name.toLowerCase().includes(f));
+    const items = entries().filter((e) => !f || e.name.toLowerCase().includes(f));
     return (['Data', 'Values', 'Functions'] as const)
       .map((g) => ({ group: g, items: items.filter((e) => e.group === g) }))
       .filter((g) => g.items.length);
@@ -39,13 +41,13 @@ function EnvironmentView() {
   // Refresh any expanded str() views when the environment changes.
   createEffect(
     on(
-      () => state.env,
+      entries,
       async () => {
         const cur = expanded();
         const names = Object.keys(cur).filter((k) => cur[k]);
         if (!names.length) return;
         const next: Record<string, string[] | undefined> = {};
-        for (const n of names) if (state.env.some((e) => e.name === n)) next[n] = await strOf(n);
+        for (const n of names) if (entries().some((e) => e.name === n)) next[n] = await strOf(n);
         setExpanded(next);
       },
       { defer: true },
@@ -75,7 +77,26 @@ function EnvironmentView() {
           <Icon name="broom" />
         </button>
         <span class="tb-sep" />
-        <span class="env-scope">Global Environment</span>
+        <Show when={state.debug} fallback={<span class="env-scope">Global Environment</span>}>
+          {(d) => (
+            <select
+              class="env-frame"
+              title="Call stack: pick a frame to see its variables"
+              value={d().frame}
+              onChange={(e) => void loadDebugFrame(Number(e.currentTarget.value))}
+            >
+              {d()
+                .stack.map((f, i) => ({ f, i }))
+                .reverse()
+                .map(({ f, i }) => (
+                  <option value={i}>
+                    {f.call}
+                    {f.path && f.line ? `  (${f.path.split('/').pop()}#${f.line})` : ''}
+                  </option>
+                ))}
+            </select>
+          )}
+        </Show>
         <span class="tb-spacer" />
         <div class="search-box small">
           <Icon name="search" size={13} />
@@ -87,7 +108,7 @@ function EnvironmentView() {
       </div>
       <div class="pane-body scroll">
         <Show
-          when={state.env.length}
+          when={entries().length}
           fallback={<div class="empty-note">{state.rStatus === 'ready' ? 'Environment is empty' : 'Waiting for R…'}</div>}
         >
           <table class="env-table">

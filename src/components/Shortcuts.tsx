@@ -45,6 +45,16 @@ const GROUPS: [string, [string, string][]][] = [
     ],
   ],
   [
+    'Debug (while paused)',
+    [
+      ['F10', 'Next line'],
+      ['shift+F4', 'Step into the function call'],
+      ['shift+F6', 'Finish the current function'],
+      ['shift+F5', 'Continue'],
+      ['shift+F8', 'Stop debugging'],
+    ],
+  ],
+  [
     'Console',
     [
       ['Tab', 'Complete'],

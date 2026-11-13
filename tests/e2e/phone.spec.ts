@@ -66,3 +66,30 @@ test('R keyboard types fast, accurately, and keeps focus', async ({ page }) => {
   expect(await page.evaluate(() => (window as any).__blurs)).toBe(0);
   await expect(page.locator('.rk')).toBeVisible();
 });
+
+test.describe('iPad split view (tall and narrow)', () => {
+  test.use({ viewport: { width: 592, height: 834 }, hasTouch: true, deviceScaleFactor: 2 });
+
+  test('script and console are stacked under one Code tab', async ({ page }) => {
+    await openApp(page, { rKeyboard: false });
+    await closeAll(page);
+    await newFile(page, 's.R', 'x <- 1:3\nprint(x)\n');
+    await expect(page.locator('.workbench.stacked')).toHaveCount(1);
+    // (While the editor has focus the key bar replaces the tabs.)
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await expect(page.locator('.phone-tab')).toHaveText(['Files', 'Code', 'Environment', 'Plots']);
+    await expect(page.locator('.quadrant[aria-label="Source"]')).toBeVisible();
+    await expect(page.locator('.quadrant[aria-label="Console"]')).toBeVisible();
+    const h = await page.locator('.quadrant[aria-label="Console"]').evaluate((e) => e.getBoundingClientRect().height);
+    expect(h).toBeGreaterThan(200);
+    // Running code keeps the Code tab (the console is already on screen).
+    await page.locator('.pane-toolbar button', { hasText: 'Source' }).tap();
+    await waitIdle(page);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await expect(page.locator('.phone-tab.active')).toHaveText('Code');
+    await expect(page.locator('.console-term .term-row', { hasText: '[1] 1 2 3' })).toBeVisible();
+    // Environment is still a tab of its own.
+    await page.locator('.phone-tab', { hasText: 'Environment' }).tap();
+    await expect(page.locator('.quadrant[aria-label="Console"]')).toBeHidden();
+  });
+});

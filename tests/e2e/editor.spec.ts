@@ -50,6 +50,15 @@ test('problems: unknown functions, bad arguments, unused variables', async ({ pa
   expect(messages.join('\n')).toContain("'unused' is assigned but never used");
 });
 
+test('problems: functions from other chunks and other files are not unknown', async ({ page }) => {
+  await writeFile(page, 'lib/helpers.R', 'helper_fn <- function(x) x + 1\n');
+  const doc = '---\ntitle: t\n---\n\n```{r}\nchunk_fn <- function(x) x * 2\n```\n\n```{r}\na <- chunk_fn(1)\nb <- helper_fn(2)\nc <- mena(3)\n```\n';
+  await page.evaluate((d) => window.__webrIde.editor().newFile('doc.qmd', d), doc);
+  // Only the real misspelling.
+  await expect(page.locator('.monaco-editor .squiggly-warning')).toHaveCount(1, { timeout: 60_000 });
+  expect(await markerMessage(page, 'warning')).toContain("Unknown function 'mena'");
+});
+
 test('outline lists sections and functions and jumps to them', async ({ page }) => {
   await newFile(page, 'o.R', '# Load ----\nx <- 1\n\n# Model ----\nfit <- function(d) lm(y ~ x, d)\n');
   await page.locator('button[title^="Outline"]').click();

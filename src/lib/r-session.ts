@@ -17,7 +17,7 @@ export type SessionEvent =
   | { type: 'pager'; title: string; text: string }
   | { type: 'view'; title: string; data: Record<string, unknown[]> }
   | { type: 'status'; status: SessionStatus; detail?: string }
-  | { type: 'submitted'; line: string }
+  | { type: 'submitted'; line: string; history?: boolean }
   | { type: 'install'; phase: 'start' | 'end'; pkg: string; version: string };
 
 export interface ChunkResult {
@@ -237,13 +237,13 @@ export class RSession {
    * `quiet`: no echo and no history (code the IDE runs itself); its output
    * and errors still show in the console.
    */
-  submit(code: string, opts: { quiet?: boolean } = {}) {
+  submit(code: string, opts: { quiet?: boolean; /** false: not added to History. */ history?: boolean } = {}) {
     if (this.status !== 'ready') return;
     const lines = code.replace(/\r\n?/g, '\n').split('\n');
     // Drop a single trailing empty line caused by a final newline.
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
     this.queue.push(...(opts.quiet ? lines.map((l) => QUIET + l) : lines));
-    if (!opts.quiet) this.emit({ type: 'submitted', line: code });
+    if (!opts.quiet) this.emit({ type: 'submitted', line: code, history: opts.history });
     if (this.atPrompt) this.sendNext();
   }
 

@@ -174,6 +174,30 @@ const paths: Record<string, JSX.Element> = {
   ),
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />,
   outline: <path d="M4 6h16M8 12h12M8 18h12M4 12h.01M4 18h.01" />,
+  'step-over': (
+    <>
+      <path d="M4 13a8 8 0 0 1 15-3.5M19 4v6h-6" />
+      <circle cx="12" cy="18" r="2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'step-into': (
+    <>
+      <path d="M12 3v11M7 9l5 5 5-5" />
+      <circle cx="12" cy="19.5" r="2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'step-out': (
+    <>
+      <path d="M12 15V4M7 9l5-5 5 5" />
+      <circle cx="12" cy="19.5" r="2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  continue: <path d="M5 4.5v15M10 4.5v15l10-7.5z" />,
+  bug: (
+    <>
+      <path d="M8 8a4 4 0 0 1 8 0v7a4 4 0 0 1-8 0zM12 11v8M3 13h5M16 13h5M4 7l4 3M20 7l-4 3M4 19l4-3M20 19l-4-3" />
+    </>
+  ),
   command: <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />,
   replace: (
     <>

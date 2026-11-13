@@ -64,6 +64,28 @@ export interface EditorApi {
 
 export type PaneId = 'script' | 'console' | 'env' | 'plots';
 
+export interface DebugFrame {
+  /** R's frame number (for sys.frame()). */
+  index: number;
+  call: string;
+  /** Workspace path and line of the frame's current position, if known. */
+  path: string | null;
+  line: number | null;
+}
+
+export interface DebugState {
+  /** Paused frames, outermost first. */
+  stack: DebugFrame[];
+  /** Selected frame (index into stack) for the Environment pane. */
+  frame: number;
+  /**
+   * Where R is paused (the innermost frame's current line). path is null for
+   * a function without a file (typed in the console); line is then counted
+   * in R's source reference.
+   */
+  location: { path: string | null; line: number } | null;
+}
+
 export type KeyAction =
   | { type: 'move'; dir: 'left' | 'right' | 'up' | 'down' }
   | { type: 'text'; text: string; /** Put the cursor this many characters back (for pairs). */ back?: number }
@@ -82,6 +104,16 @@ const [phone, setPhone] = createSignal(phoneQuery.matches);
 phoneQuery.addEventListener('change', () => setPhone(phoneQuery.matches));
 /** True on phone-sized screens, where panes are shown one at a time. */
 export { phone };
+
+// Tall but narrow windows (an iPad in Split View or Slide Over): the script and
+// console share the screen, one above the other, under one "Code" tab. The
+// layout viewport's height doesn't change when the on-screen keyboard opens,
+// so this doesn't flip while typing. Phones are never this wide and tall.
+const isStacked = () => window.innerWidth >= 480 && window.innerHeight >= 640;
+const [stackedRaw, setStackedRaw] = createSignal(isStacked());
+window.addEventListener('resize', () => setStackedRaw(isStacked()));
+/** Phone layout with the script and console stacked together. */
+export const stacked = () => phone() && stackedRaw();
 
 /**
  * True while a package is downloading/installing. Stays on briefly between
@@ -149,6 +181,13 @@ const [state, setState] = createStore({
   /** Phone layout: the pane on screen, and tabs with output not yet seen. */
   phoneTab: 'script' as PhoneTab,
   phoneBadges: { console: false, plots: false } as Record<'console' | 'plots', boolean>,
+  /** R is paused at a Browse[n]> prompt (debugging). */
+  debug: null as null | DebugState,
+  /** Variables of the selected paused frame. */
+  debugEnv: [] as EnvEntry[],
+  debugOnError: false,
+  /** Breakpoints of the workspace: path → lines. */
+  breakpoints: {} as Record<string, number[]>,
 });
 
 let stayOnPane = false;
@@ -165,6 +204,8 @@ export function withoutPaneSwitch(fn: () => void) {
 /** On phones, bring a pane on screen (no-op on larger screens). */
 export function showPane(tab: PhoneTab) {
   if (!phone() || stayOnPane) return;
+  // Stacked: the console is on screen with the script.
+  if (stacked() && tab === 'console') tab = 'script';
   batch(() => {
     setState('phoneTab', tab);
     if (tab === 'console' || tab === 'plots') setState('phoneBadges', tab, false);
@@ -174,7 +215,8 @@ export function showPane(tab: PhoneTab) {
 // Only output that follows something the user ran counts (not R's banner).
 let badgesArmed = false;
 function badge(tab: 'console' | 'plots') {
-  if (badgesArmed && phone() && state.phoneTab !== tab && !state.phoneBadges[tab]) setState('phoneBadges', tab, true);
+  const visible = state.phoneTab === tab || (tab === 'console' && stacked() && state.phoneTab === 'script');
+  if (badgesArmed && phone() && !visible && !state.phoneBadges[tab]) setState('phoneBadges', tab, true);
 }
 export { state, setState };
 
@@ -233,12 +275,18 @@ session.on((ev) => {
       setState({ rStatus: ev.status, rStatusDetail: ev.detail ?? '' });
       break;
     case 'submitted':
-      addHistory(ev.line);
+      if (ev.history !== false) addHistory(ev.line);
       badgesArmed = true;
       // Code run from the editor, files, environment or history: show its output.
       showPane('console');
       break;
     case 'stdout':
+      noteDebugLocation(ev.text);
+      badge('console');
+      break;
+    case 'prompt':
+      onPrompt(ev.prompt);
+      break;
     case 'stderr':
       badge('console');
       break;
@@ -323,7 +371,140 @@ export async function refreshEnv() {
   }
 }
 
+// ---------------------------------------------------------------- debugging
+
+/** A file R names (absolute, ~/ws/…, relative or bare) → its workspace path. */
+export function workspacePathOf(file: string): string | null {
+  const files = fs.flattenTree(state.tree).filter((n) => n.kind === 'file');
+  for (const pre of [`~/${state.workspace}/`, `${rRoot()}/`]) {
+    if (file.startsWith(pre)) {
+      const p = file.slice(pre.length);
+      return files.some((n) => n.path === p) ? p : null;
+    }
+  }
+  const exact = files.find((n) => n.path === file.replace(/^\.\//, ''));
+  return exact?.path ?? files.find((n) => n.name === file.split('/').pop())?.path ?? null;
+}
+
+const BROWSE = /^Browse\[\d+\]> $/;
+// R's "debug at file.R#12: …" while stepping ("debug at #2: …" for code
+// without a file), and "file.R#12" when a breakpoint is hit.
+const DEBUG_AT = /^debug at (\S*?)#(\d+):/m;
+const BREAK_AT = /^(\S+?\.[A-Za-z]+)#(\d+)$/m;
+let pendingLocation: { path: string | null; line: number } | null = null;
+/** Paused inside a breakpoint's tracing code (one step from the real line). */
+let atTracer = false;
+let tracerLocation: { path: string | null; line: number } | null = null;
+
+function noteDebugLocation(text: string) {
+  const m = DEBUG_AT.exec(text);
+  if (m) {
+    pendingLocation = { path: m[1] ? workspacePathOf(m[1]) : null, line: Number(m[2]) };
+    return;
+  }
+  const b = BREAK_AT.exec(text);
+  if (b) {
+    pendingLocation = { path: workspacePathOf(b[1]), line: Number(b[2]) };
+    atTracer = true;
+  }
+}
+
+function onPrompt(prompt: string) {
+  if (BROWSE.test(prompt)) void enterDebug();
+  else if (state.debug) {
+    batch(() => {
+      setState('debug', null);
+      setState('debugEnv', []);
+    });
+    pendingLocation = null;
+    tracerLocation = null;
+    atTracer = false;
+  }
+}
+
+/** R paused: load the call stack and the innermost frame's variables. */
+async function enterDebug() {
+  // A breakpoint stops inside R's tracing code: step quietly onto the line
+  // itself, so Step Into and Next act on it straight away.
+  if (atTracer) {
+    atTracer = false;
+    tracerLocation = pendingLocation;
+    pendingLocation = null;
+    session.submit('n', { quiet: true });
+    return;
+  }
+  let stack: DebugFrame[] = [];
+  try {
+    const flat = await session.strings('.ide_debug_stack()');
+    for (let i = 0; i + 3 < flat.length; i += 4)
+      stack.push({ index: Number(flat[i]), call: flat[i + 1], path: flat[i + 2] ? workspacePathOf(flat[i + 2]) : null, line: flat[i + 3] ? Number(flat[i + 3]) : null });
+  } catch (e) {
+    console.warn('debug stack', e);
+  }
+  const location = pendingLocation ?? tracerLocation ?? state.debug?.location ?? null;
+  pendingLocation = null;
+  tracerLocation = null;
+  if (stack.length && location) stack[stack.length - 1] = { ...stack[stack.length - 1], path: location.path, line: location.line };
+  setState('debug', { stack, frame: Math.max(0, stack.length - 1), location });
+  await loadDebugFrame(Math.max(0, stack.length - 1));
+  showPane('console');
+}
+
+/** Show paused frame `i`'s variables in the Environment pane. */
+export async function loadDebugFrame(i: number) {
+  if (!state.debug) return;
+  setState('debug', 'frame', i);
+  const frame = state.debug.stack[i];
+  if (!frame) return setState('debugEnv', []);
+  try {
+    const flat = await session.strings(`.ide_debug_env(${frame.index}L)`);
+    const out: EnvEntry[] = [];
+    for (let k = 0; k + 4 < flat.length; k += 5) out.push({ name: flat[k], group: flat[k + 1] as EnvEntry['group'], cls: flat[k + 2], value: flat[k + 3], size: flat[k + 4] });
+    setState('debugEnv', out);
+  } catch (e) {
+    console.warn('debug frame', e);
+  }
+}
+
+export type DebugCommand = 'next' | 'step' | 'finish' | 'continue' | 'stop';
+const DEBUG_KEYS: Record<DebugCommand, string> = { next: 'n', step: 's', finish: 'f', continue: 'c', stop: 'Q' };
+
+/** Step / continue / stop while paused (sent to the browser prompt, not to history). */
+export function debugCommand(cmd: DebugCommand) {
+  if (!state.debug) return;
+  session.submit(DEBUG_KEYS[cmd], { history: false });
+}
+
+/** Pause where an error happens ("Debug on error"). */
+export async function setDebugOnError(on: boolean) {
+  setState('debugOnError', on);
+  if (session.status === 'ready') await session.evalVoid(`.ide_debug_on_error(${on ? 'TRUE' : 'FALSE'})`).catch(() => {});
+}
+
+/** Set (or clear) a file's breakpoints; they take effect when the file is sourced. */
+export function setBreakpoints(path: string, lines: number[]) {
+  const sorted = [...new Set(lines)].sort((a, b) => a - b);
+  if (sorted.length) setState('breakpoints', path, sorted);
+  // (Setting a key to undefined removes it; returning a smaller object would merge.)
+  else setState('breakpoints', path, undefined!);
+  scheduleIdeStateSave();
+}
+
+/**
+ * Apply a file's breakpoints to functions already defined from it (an earlier
+ * Source), so adding or removing one takes effect without sourcing again.
+ * R can be asked while idle or paused.
+ */
+export async function applyBreakpoints(path: string) {
+  if (session.status !== 'ready' || (!session.idle && !state.debug)) return;
+  const lines = state.breakpoints[path] ?? [];
+  await session.evalVoid(`.ide_apply_breakpoints(${rString(rDisplayPath(path))}, c(${lines.join(',')}))`).catch((e) => console.warn('breakpoints', e));
+}
+
 export async function strOf(name: string): Promise<string[]> {
+  // Paused: the selected frame's variable (R can be asked while it waits).
+  const frame = state.debug?.stack[state.debug.frame];
+  if (frame) return session.strings(`.ide_str(${rString(name)}, ${frame.index}L)`).catch((e) => [String(e)]);
   if (!session.idle) return ['(R is busy)'];
   try {
     return await session.strings(`.ide_str(${rString(name)})`);
@@ -347,13 +528,20 @@ export async function refreshPackages() {
 
 /** R completions for the text before the cursor; `fn` marks functions. */
 export async function completions(line: string): Promise<{ token: string; items: string[]; fn: boolean[] }> {
-  if (!(await session.waitIdle(1500))) return { token: '', items: [], fn: [] };
+  // R can also be asked while paused in the debugger.
+  if (!state.debug && !(await session.waitIdle(1500))) return { token: '', items: [], fn: [] };
   try {
     const all = await session.strings(`.ide_complete(${rString(line)})`);
     const res = all.slice(1);
     const fn = res.map((s) => s.endsWith('\x1f('));
     const items = res.map((s, i) => (fn[i] ? s.slice(0, -2) : s));
-    return { token: all[0] ?? '', items, fn };
+    const token = all[0] ?? '';
+    // Paused: the frame's own variables first (R completes from the global environment).
+    if (state.debug && /^[A-Za-z.][\w.]*$/.test(token)) {
+      const locals = state.debugEnv.map((e) => e.name).filter((n) => n.startsWith(token) && !items.includes(n));
+      return { token, items: [...locals, ...items], fn: [...locals.map((n) => state.debugEnv.find((e) => e.name === n)?.group === 'Functions'), ...fn] };
+    }
+    return { token, items, fn };
   } catch {
     return { token: '', items: [], fn: [] };
   }
@@ -675,7 +863,7 @@ write.csv(head(mtcars), "mtcars_head.csv")
 async function saveIdeState() {
   if (!state.workspace || !editorApi || state.switching) return;
   try {
-    await fs.writeFile(state.workspace, `${fs.IDE_DIR}/state.json`, JSON.stringify(editorApi.getOpenState()));
+    await fs.writeFile(state.workspace, `${fs.IDE_DIR}/state.json`, JSON.stringify({ ...editorApi.getOpenState(), breakpoints: state.breakpoints }));
   } catch (e) {
     console.warn(e);
   }
@@ -687,7 +875,7 @@ export function scheduleIdeStateSave() {
   stateSaveTimer = window.setTimeout(saveIdeState, 500);
 }
 
-async function loadIdeState(ws: string): Promise<{ open: string[]; active: string | null } | null> {
+async function loadIdeState(ws: string): Promise<{ open: string[]; active: string | null; breakpoints?: Record<string, number[]> } | null> {
   try {
     return JSON.parse(await fs.readText(ws, `${fs.IDE_DIR}/state.json`));
   } catch {
@@ -734,6 +922,7 @@ export async function openWorkspaceUI(ws: string) {
   await refreshTree();
   setState('history', await loadHistory(ws));
   const ide = await loadIdeState(ws);
+  setState('breakpoints', ide?.breakpoints ?? {});
   if (ide && editorApi) await editorApi.restoreOpenState(ide);
 }
 
@@ -743,6 +932,7 @@ export async function attachWorkspaceToR(restoreImage: boolean) {
   try {
     const restored = await loadWorkspaceIntoR(restoreImage);
     if (restored === 'restored') toast('Restored environment from .RData');
+    if (state.debugOnError) await session.evalVoid('.ide_debug_on_error(TRUE)').catch(() => {});
     runRprofile();
     await refreshEnv();
     savedEnvSig = envSignature();

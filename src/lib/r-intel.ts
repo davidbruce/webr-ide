@@ -128,7 +128,8 @@ local({
       paste0(rel, "\x1f", sub("^[^ :]*: ", "", sub("\\s*\\(<text>:[0-9-]+\\)\\s*$", "", m)))
     }, "", USE.NAMES = FALSE)
   }
-  e$.ide_lint <- function(text, budget = 0.1) {
+  # 'known': names defined elsewhere (other chunks, other files) that aren't unknown.
+  e$.ide_lint <- function(text, budget = 0.1, known = character(0)) {
     if (!e$.ide_tool("codetools")) return("1")
     exprs <- tryCatch(parse(text = text, keep.source = TRUE), error = function(err) NULL)
     if (is.null(exprs) || !length(exprs)) return("1")
@@ -167,7 +168,7 @@ local({
         if (grepl("no visible binding for global variable", m, fixed = TRUE)) next
         if (grepl("no visible global function definition", m, fixed = TRUE)) {
           name <- sub("^.*definition for \\W*([A-Za-z0-9._]+)\\W*$", "\\1", m, perl = TRUE)
-          if (unknown_ok || name %in% assigned || exists(name, envir = globalenv())) next
+          if (unknown_ok || name %in% assigned || name %in% known || exists(name, envir = globalenv())) next
         }
         out <- c(out, as.character(ref[1] + as.integer(parts[1])), m)
       }

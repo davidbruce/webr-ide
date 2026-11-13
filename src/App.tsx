@@ -12,7 +12,7 @@ import { RenvDialog } from './components/RenvDialog';
 import { openSettings } from './lib/settings';
 import { PackageBrowser } from './components/PackageBrowser';
 import { consoleApi } from './components/Console';
-import { editor, initWorkspaces, openWorkspaceUI, setState, startR, state, restartR } from './lib/ide';
+import { editor, initWorkspaces, openWorkspaceUI, setState, startR, state, restartR, debugCommand } from './lib/ide';
 import { initStorage, requestPersistence } from './lib/opfs';
 import { isDark, toast } from './lib/ui';
 
@@ -38,6 +38,29 @@ export function App() {
     }
     await startR();
   });
+
+  // Debugger keys (RStudio's), wherever focus is, while R is paused.
+  const onDebugKey = (e: KeyboardEvent) => {
+    if (!state.debug) return;
+    const cmd =
+      e.key === 'F10' && !e.shiftKey
+        ? 'next'
+        : e.shiftKey && e.key === 'F4'
+          ? 'step'
+          : e.shiftKey && e.key === 'F6'
+            ? 'finish'
+            : e.shiftKey && e.key === 'F5'
+              ? 'continue'
+              : e.shiftKey && e.key === 'F8'
+                ? 'stop'
+                : null;
+    if (!cmd) return;
+    e.preventDefault();
+    e.stopPropagation();
+    debugCommand(cmd);
+  };
+  window.addEventListener('keydown', onDebugKey, true);
+  onCleanup(() => window.removeEventListener('keydown', onDebugKey, true));
 
   // Global shortcuts (Monaco handles its own when focused).
   const onKey = (e: KeyboardEvent) => {
