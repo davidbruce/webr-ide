@@ -134,6 +134,17 @@ The Packages tab splits the list into the **User library** (saved packages) and 
 
 > **Tip for iPad:** use *Share → Add to Home Screen*. Installed web apps are exempt from Safari's 7-day storage eviction for sites you haven't visited. The app also asks the browser for persistent storage.
 
+### Experimental: R keyboard (phones)
+
+**Workspace menu → Experimental: R Keyboard** replaces the phone's keyboard in the editor and console with one made for R. It's laid out like the iPhone keyboard (letters, **123** and **#+=** layers, `123 · 🌐 · space · return`), with extra rows above it:
+- **Suggestions:** a strip of R completions in place of the system suggestion bar. Functions insert `name()` with the cursor inside, then offer argument names.
+- **Navigation row:** Tab, arrows, Undo/Redo, Run, and a key to hide the keyboard.
+- **R row:** `<-`, `|>`, brackets, quotes, `$` and `~`. Long-press for alternates such as `->`, `%>%`, `[[`, `'` and `@`.
+- **Space bar:** drag along it to move the cursor.
+- **🌐** switches to the system keyboard (for dictation, other languages or emoji). The keyboard key on the key bar switches back.
+
+Keys type on touch-down, and touches between keys go to the nearest key, so fast typing doesn't drop keys or close the keyboard.
+
 ## Keyboard shortcuts
 
 The same shortcuts work on all platforms: ⌘ on Mac and iPad keyboards is Ctrl on Windows and Linux, and ⌥ is Alt. Tooltips show the keys for your platform.

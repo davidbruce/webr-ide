@@ -180,6 +180,22 @@ const paths: Record<string, JSX.Element> = {
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   tab: <path d="M4 12h13M12 7l5 5-5 5M20 6v12" />,
   undo: <path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
+  backspace: <path d="M21 5H9l-6 7 6 7h12zM12 9l6 6M18 9l-6 6" />,
+  shift: <path d="M12 4l8 8h-4v7H8v-7H4z" />,
+  'shift-on': <path d="M12 4l8 8h-4v7H8v-7H4z" fill="currentColor" />,
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </>
+  ),
+  return: <path d="M20 5v7H6M10 8l-4 4 4 4" />,
+  keyboard: (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+    </>
+  ),
   redo: <path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" />,
   offline: (
     <>

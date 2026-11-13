@@ -2,6 +2,8 @@ import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import { state, setState, editor, phone, showPane, PhoneTab } from '../lib/ide';
 import { Icon } from './Icon';
 import { KeyBar, keyBarTarget, keyboardUp } from './KeyBar';
+import { RKeyboard } from './RKeyboard';
+import { rKeyboardActive } from '../lib/rkeyboard';
 import { EditorPane } from './Editor';
 import { ConsolePane } from './Console';
 import { EnvPane } from './EnvPane';
@@ -202,7 +204,7 @@ const PHONE_TABS: { id: PhoneTab; label: string; icon: string }[] = [
 export function PhoneTabs() {
   return (
     <Show when={phone()}>
-      <Show when={!keyBarTarget()} fallback={<KeyBar />}>
+      <Show when={!keyBarTarget()} fallback={<Show when={rKeyboardActive()} fallback={<KeyBar />}><RKeyboard /></Show>}>
         <Show when={!keyboardUp()}>
           <PaneTabs />
         </Show>

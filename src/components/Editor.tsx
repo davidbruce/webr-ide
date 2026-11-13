@@ -436,6 +436,14 @@ export function EditorPane() {
     },
     hasDirty: () => tabs.list.some((t) => t.dirty),
     renderActive,
+    beforeCursor() {
+      const m = ed?.getModel();
+      const pos = ed?.getPosition();
+      return m && pos && !inGrid() ? m.getLineContent(pos.lineNumber).slice(0, pos.column - 1) : null;
+    },
+    setQuickSuggest(on) {
+      ed?.updateOptions({ quickSuggestions: on ? { other: true, comments: false, strings: false } : false });
+    },
     key(action) {
       if (!ed?.getModel() || inGrid()) return;
       const go = (cmd: string, args: unknown = null) => ed.trigger('keybar', cmd, args);
@@ -457,6 +465,24 @@ export function EditorPane() {
         case 'tab':
           go(suggesting() ? 'acceptSelectedSuggestion' : 'tab');
           break;
+        case 'type':
+          go('type', { text: action.text });
+          break;
+        case 'backspace':
+          go('deleteLeft');
+          break;
+        case 'enter':
+          if (suggesting()) go('acceptSelectedSuggestion');
+          else go('type', { text: '\n' });
+          break;
+        case 'complete': {
+          const pos = ed.getPosition();
+          if (!pos) return;
+          const from = Math.max(1, pos.column - action.remove);
+          ed.executeEdits('keyboard', [{ range: new monaco.Range(pos.lineNumber, from, pos.lineNumber, pos.column), text: action.text, forceMoveMarkers: true }]);
+          for (let i = 0; i < (action.back ?? 0); i++) go('cursorLeft');
+          break;
+        }
         case 'undo':
           go('undo');
           break;

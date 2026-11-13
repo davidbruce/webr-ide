@@ -41,6 +41,10 @@ export interface EditorApi {
   layout(): void;
   /** Phone key bar: move, insert, tab, undo/redo or run, in the focused editor. */
   key?(action: KeyAction): void;
+  /** Text of the current line before the cursor (for the R keyboard's suggestions). */
+  beforeCursor?(): string | null;
+  /** Show Monaco's own suggestion popup as you type (off while the R keyboard shows its own). */
+  setQuickSuggest?(on: boolean): void;
   /** Render the active Quarto / R Markdown document into the Preview tab. */
   renderActive?(): void;
 }
@@ -50,7 +54,11 @@ export type PaneId = 'script' | 'console' | 'env' | 'plots';
 export type KeyAction =
   | { type: 'move'; dir: 'left' | 'right' | 'up' | 'down' }
   | { type: 'text'; text: string; /** Put the cursor this many characters back (for pairs). */ back?: number }
-  | { type: 'tab' | 'undo' | 'redo' | 'run' };
+  | { type: 'tab' | 'undo' | 'redo' | 'run' | 'backspace' | 'enter' }
+  /** Typed as if from a keyboard (auto-closing brackets, indentation apply). */
+  | { type: 'type'; text: string }
+  /** Replace the `remove` characters before the cursor (a completion). */
+  | { type: 'complete'; remove: number; text: string; back?: number };
 
 // ---------------------------------------------------------------- phone layout
 

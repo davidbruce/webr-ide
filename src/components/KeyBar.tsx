@@ -6,6 +6,7 @@ import { createSignal, For, onCleanup } from 'solid-js';
 import { editor, KeyAction } from '../lib/ide';
 import { consoleApi } from './Console';
 import { Icon } from './Icon';
+import { rKeyboardActive, rKeyboardEnabled, useSystemKeyboard } from '../lib/rkeyboard';
 
 type Target = 'editor' | 'console';
 
@@ -36,7 +37,9 @@ const sync = () => {
     const el = document.activeElement;
     setTarget(targetOf(el));
     setTyping(isText(el));
-  }, 250);
+    // No system keyboard to disturb with the R keyboard: swap at once (the
+    // 0 ms wait still lets a blur-then-refocus settle without a flicker).
+  }, rKeyboardActive() ? 0 : 250);
 };
 document.addEventListener('focusin', sync);
 document.addEventListener('focusout', sync);
@@ -121,6 +124,19 @@ export function KeyBar() {
     <div class="keybar" role="toolbar" aria-label="Programming keys">
       <For each={keys()}>{(k) => <KeyButton k={k} title={k.title} icon={k.icon} />}</For>
       <KeyButton k="run" class="run" title={target() === 'console' ? 'Run (Enter)' : 'Run the current line or chunk'} icon="play" />
+      {rKeyboardEnabled() && (
+        <button
+          type="button"
+          class="keybar-key"
+          title="Back to the R keyboard"
+          aria-label="Back to the R keyboard"
+          tabindex="-1"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => useSystemKeyboard(false)}
+        >
+          <Icon name="keyboard" size={20} />
+        </button>
+      )}
     </div>
   );
 }
