@@ -26,7 +26,7 @@ import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
 import { outline, rRegions, styleCode, findDefinitions, symbolAt, type OutlineItem, type DefinitionHit } from '../lib/language';
-import { installPackages } from '../lib/pkg-actions';
+import { PKG_TOOLS } from '../lib/packages';
 import { openShortcuts } from './Shortcuts';
 import { openFindInFiles } from './SearchPanel';
 import { desktopEditing } from '../lib/input-mode';
@@ -480,6 +480,8 @@ export function EditorPane() {
       res = await styleCode(region.text, 'indention');
       if (res.ok) {
         const out = res.text.split('\n');
+        // styler drops trailing blank lines: put them back so lines still match up.
+        while (out.length < regionEnd - region.line + 1 && !model.getLineContent(region.line + out.length).trim()) out.push('');
         if (out.length === regionEnd - region.line + 1) text = out.slice(from - region.line, to - region.line + 1).join('\n');
         else {
           from = region.line;
@@ -494,7 +496,12 @@ export function EditorPane() {
         return m === null || ws.length < m.length ? ws : m;
       }, null) ?? '';
       res = await styleCode(lines.map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart())).join('\n'));
-      if (res.ok) text = res.text.split('\n').map((l) => (l ? indent + l : l)).join('\n');
+      if (res.ok) {
+        // styler drops trailing blank lines (a file's final newline): keep them.
+        const out = res.text.replace(/\n+$/, '').split('\n').map((l) => (l ? indent + l : l));
+        const trailing = lines.length - (lines.findLastIndex((l) => l.trim()) + 1);
+        text = [...out, ...Array(trailing).fill('')].join('\n');
+      }
     }
     if (!res.ok) {
       if (res.missing && !retried) {
@@ -504,7 +511,8 @@ export function EditorPane() {
           { okLabel: 'Install' },
         );
         if (!ok) return;
-        installPackages(['styler']);
+        // Into the IDE's tools library, not the workspace's.
+        session.submit(`webr::install("styler", lib = ${rString(PKG_TOOLS)})`);
         await new Promise((r) => setTimeout(r, 50));
         if (await session.waitIdle(10 * 60_000)) return formatCode(scope, true);
         return;

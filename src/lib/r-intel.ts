@@ -129,7 +129,7 @@ local({
     }, "", USE.NAMES = FALSE)
   }
   e$.ide_lint <- function(text, budget = 0.1) {
-    if (!requireNamespace("codetools", quietly = TRUE)) return("1")
+    if (!e$.ide_tool("codetools")) return("1")
     exprs <- tryCatch(parse(text = text, keep.source = TRUE), error = function(err) NULL)
     if (is.null(exprs) || !length(exprs)) return("1")
     refs <- attr(exprs, "srcref")
@@ -175,9 +175,10 @@ local({
     c(if (done) "1" else "0", out)
   }
 
-  # styler: NA if it isn't installed, "\x01<message>" on error.
+  # styler: "\x02" if it isn't installed, "\x01<message>" on error.
   e$.ide_style <- function(text, scope = "tokens") {
-    if (!requireNamespace("styler", quietly = TRUE)) return(NA_character_)
+    # Installed on request (the IDE asks first): only check here.
+    if (!e$.ide_tool("styler", install = FALSE)) return("\x02")
     tryCatch({
       try(styler::cache_deactivate(verbose = FALSE), silent = TRUE)
       out <- suppressMessages(styler::style_text(text, scope = scope))

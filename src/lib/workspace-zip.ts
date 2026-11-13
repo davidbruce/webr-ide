@@ -2,7 +2,7 @@
 // device) and import one as a new workspace.
 import { Zip, ZipDeflate, AsyncZipDeflate, ZipPassThrough, unzip } from 'fflate';
 import * as fs from './opfs';
-import { state, editor, syncFromR, downloadBlob, refreshWorkspaces, switchWorkspace } from './ide';
+import { state, editor, syncFromR, downloadBlob, refreshWorkspaces, switchWorkspace, session, saveEnvironmentImage } from './ide';
 import { askText, choiceDialog, formatBytes, toast } from './ui';
 
 /** Already compressed: stored as-is (deflating them again wastes time). */
@@ -22,6 +22,8 @@ export async function exportWorkspace() {
     if (r === null) return;
     if (r !== 'skip') await editor()?.saveAll();
   }
+  // Save the environment too, so the zip has the objects as they are now.
+  if (session.idle) await saveEnvironmentImage(true, { auto: true }).catch(() => false);
   await syncFromR().catch(() => {});
   toast(`Exporting ${ws}…`);
   const nodes = fs.flattenTree(await fs.listTree(ws, true));

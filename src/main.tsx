@@ -46,6 +46,8 @@ void registerServiceWorker();
 
 // Dev-only handle for debugging and automated tests.
 if (import.meta.env.DEV) {
-  void import('./lib/ide').then((ide) => ((window as any).__webrIde = { session: ide.session, editor: ide.editor, ide }));
+  void Promise.all([import('./lib/ide'), import('./lib/opfs')]).then(
+    ([ide, fs]) => ((window as any).__webrIde = { session: ide.session, editor: ide.editor, ide, fs }),
+  );
 }
 render(() => <App />, document.getElementById('root')!);

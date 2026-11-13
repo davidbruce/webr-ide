@@ -18,7 +18,7 @@ An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to W
 - **Per-workspace options** (Settings → *This workspace*, stored in the workspace's `.ide/` folder so they travel with a zip export):
   - **Tab width** for this workspace, overriding your default.
   - **`.Rprofile`**: a workspace's `.Rprofile` is sourced (and `.First()` called) when the workspace opens, on switching to it and after restarting R. Its output shows in the console. Unlike desktop R this happens after `.RData` is restored. It can be turned off per workspace.
-  - **Package library**: *Shared* (the default) uses every package you've installed. *Own* gives the workspace its own library, like an `renv` project: only the packages installed while in it, at those versions, starting from the packages loaded when you switch it on. Packages are still stored once: every cached package is mounted out of sight at start-up and each library is a set of links to it, so adding an already-cached package to a workspace is instant and doesn't download it again. Older versions are kept while a workspace still uses them. Switching between workspaces whose libraries differ only restarts R if a package that has to change is already loaded.
+  - **Package library**: *Shared* (the default) uses every package you've installed. *Own* gives the workspace its own library, like an `renv` project: only the packages installed while in it, at those versions, starting from the packages loaded when you switch it on. Packages are still stored once: every cached package is mounted out of sight at start-up and each library is a set of links to it, so adding an already-cached package to a workspace is instant and doesn't download it again. Older versions are kept while a workspace still uses them. Switching between workspaces whose libraries differ only restarts R if a package that has to change is already loaded. Packages the IDE uses for its own features (`codetools` for problem checks, styler for formatting) go in a separate tools library at the end of R's search path, so they never show up in a workspace's library or its renv.lock.
   - **renv projects**: a workspace with an `renv.lock` (say, a desktop project imported as a zip) is checked against webR when it opens: every locked package is compared with webR's repository and the packages built into webR, and a dialog gives the verdict (compatible, compatible with different versions, or partly compatible) and lists what's missing or differs. webR only has the current build of each package, and GitHub and Bioconductor packages usually have no webR build. **Install** gives the workspace its own library with the available packages. The check repeats only when the lockfile changes; the Packages tab and the command palette run it on demand. renv's own activation in `.Rprofile` (`source("renv/activate.R")`) is skipped, since it would try to bootstrap renv inside the browser.
   - **Writing renv.lock** (Settings → *This workspace*, the Packages tab, or the command palette) takes a workspace back to desktop R with `renv::restore()`. It lists the workspace's own library (or, with the shared library, the packages loaded now) with their dependencies. An existing lockfile is updated, not replaced: its R version and repositories stay, and so do packages webR can't provide (GitHub, Bioconductor, …), so they survive a trip through the browser. With its own library, a workspace can keep renv.lock updated as packages are installed or removed. webR only has the current build of each package, so when the workspace's versions differ from those the lockfile pins, the IDE lists them and asks whether to update the pins to webR's versions or keep them (new packages are added either way). The answer is remembered per workspace and can be changed in Settings.
 - **App:** a progress card while R starts; after the first visit it starts offline. When a new version is published a banner offers **Reload**, which saves open files and the environment first
@@ -199,6 +199,29 @@ npm run dev        # http://localhost:5173 (sends COOP/COEP headers)
 npm run build      # production build → dist/
 npm run preview    # serve dist/ (the production build) on http://localhost:4173
 ```
+
+### Automated tests
+
+End-to-end tests run the real app in WebKit (Safari's engine) with [Playwright](https://playwright.dev). They start their own dev server on port 5299.
+
+```bash
+npx playwright install webkit   # once
+npm test                        # everything except the PWA tests (~5 min)
+npm run test:offline            # skip tests that install packages from repo.r-wasm.org
+npm run test:pwa                # production build: offline start, update banner
+```
+
+| File | Covers |
+|---|---|
+| `startup.spec.ts` | start-up progress, the console, error locations that open the file |
+| `editor.spec.ts` | syntax errors, argument suggestions, problem checks, outline, F1/F2, comments, ⌘⌥R, command palette, find and replace in files |
+| `notebook.spec.ts` | Quarto chunks inline and in the Output tab, rendering to HTML |
+| `workspace.spec.ts` | Settings, per-workspace tab width, `.Rprofile` (and renv's activation being skipped), zip export/import |
+| `packages.spec.ts` | workspace libraries (links instead of downloads, restarts only when needed), the renv.lock check, writing renv.lock, styler (`@network`) |
+| `phone.spec.ts` | the phone layout, outline and search on a phone, the R keyboard typing fast without losing focus |
+| `pwa.spec.ts` | offline start and the update banner, against a production build |
+
+Each test gets a fresh browser profile and wipes the site's storage first. WebKit shares that storage between profiles, so tests run one at a time. Failures keep a trace: `npx playwright show-trace test-results/<test>/trace.zip`.
 
 ### Testing on a phone or tablet
 

@@ -8,7 +8,10 @@
     "preview": "vite preview --host",
     "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "tunnel:preview": "cloudflared tunnel --url http://localhost:4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "test:offline": "playwright test --grep-invert @network",
+    "test:pwa": "playwright test -c playwright.pwa.config.ts"
   },
   "author": "",
   "license": "ISC",
@@ -31,6 +34,7 @@
     "webr": "^0.6.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

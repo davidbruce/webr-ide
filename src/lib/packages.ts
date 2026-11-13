@@ -27,6 +27,17 @@ import { readLibrary, referencedVersions, writeLibrary, wsConfig, type Workspace
 
 export const PKG_LIB = '/webr-ide/library';
 export const PKG_CACHE = '/webr-ide/cache';
+/** Packages the IDE itself uses (codetools, styler): kept out of workspace libraries. */
+export const PKG_TOOLS = '/webr-ide/tools';
+const TOOLS = 'packages/tools.json'; // { "<R ver>": { "<pkg>": "<version>" } }
+
+async function readTools(): Promise<Record<string, Record<string, string>>> {
+  try {
+    return JSON.parse(await (await fs.readAppFile(TOOLS)).text());
+  } catch {
+    return {};
+  }
+}
 const INDEX = 'packages/index.json';
 
 export interface CachedPackage {
@@ -37,6 +48,11 @@ export interface CachedPackage {
   url: string; // where it was downloaded from
   size: number;
   cachedAt: number;
+  /**
+   * false: only the IDE installed it (a tool such as codetools, or one of its
+   * dependencies), so shared libraries don't include it. Missing = yours.
+   */
+  user?: boolean;
 }
 
 type Index = Record<string, Record<string, CachedPackage>>;
@@ -140,7 +156,7 @@ export const cachedBytes = () => Object.values(pkgCache.entries).reduce((n, p) =
 /** Which packages (name → version) a library uses, given the cache index. */
 function wanted(lib: WorkspaceLibrary, pkgs: Record<string, CachedPackage>): Record<string, string> {
   if (lib.mode === 'workspace') return { ...lib.packages };
-  return Object.fromEntries(Object.entries(pkgs).filter(([k]) => !k.includes('@')).map(([k, e]) => [k, e.version]));
+  return Object.fromEntries(Object.entries(pkgs).filter(([k, e]) => !k.includes('@') && e.user !== false).map(([k, e]) => [k, e.version]));
 }
 
 const cacheDir = (name: string, version: string) => `${name}_${version}`;
@@ -169,15 +185,16 @@ export async function setupPackages(session: RSession, ws: string): Promise<{ mo
   const rv = rMinor(session.versionR);
   mountedDirs.clear();
   setPkgCache({ rVersion: rv, pendingRestart: [], linked: {} });
-  await session.evalVoid(`.ide_pkg_setup(${rString(PKG_LIB)}, ${rString(PKG_CACHE)})`);
+  await session.evalVoid(`.ide_pkg_setup(${rString(PKG_LIB)}, ${rString(PKG_CACHE)}, ${rString(PKG_TOOLS)})`);
 
   const pkgs = await withIndex((index) => ({ ...(index[rv] ?? {}) }), false);
   const want = wanted(await readLibrary(ws), pkgs);
+  const tools = (await readTools())[rv] ?? {};
   // The latest version of everything (so installs can link instead of
   // downloading), plus older versions this workspace uses.
   const toMount = new Map<string, CachedPackage>();
   for (const [k, e] of Object.entries(pkgs)) if (!k.includes('@')) toMount.set(k, e);
-  for (const [n, v] of Object.entries(want)) {
+  for (const [n, v] of [...Object.entries(want), ...Object.entries(tools)]) {
     const e = entryFor(pkgs, n, v);
     if (e) toMount.set(`${n}@${v}`, e);
   }
@@ -195,6 +212,12 @@ export async function setupPackages(session: RSession, ws: string): Promise<{ mo
       bad.push(key);
     }
   }
+  // The IDE's own tools, in their separate library.
+  const toolLinks = Object.entries(tools).filter(([n, v]) => mountedDirs.has(cacheDir(n, v)));
+  if (toolLinks.length)
+    await session.evalVoid(
+      `.ide_pkg_link(c(${toolLinks.map(([n]) => rString(n)).join(',')}), c(${toolLinks.map(([n, v]) => rString(cacheDir(n, v))).join(',')}), ${rString(PKG_TOOLS)})`,
+    );
   const linkable = Object.entries(want).filter(([n, v]) => mountedDirs.has(cacheDir(n, v)));
   const missing = Object.keys(want).filter((n) => !linkable.some(([m]) => m === n));
   await linkPackages(session, linkable);
@@ -271,13 +294,25 @@ export async function captureInstalls(session: RSession): Promise<CachedPackage[
   const rv = pkgCache.rVersion || rMinor(session.versionR);
   const added: CachedPackage[] = [];
   const installed: [string, string][] = [];
+  const toolInstalls: [string, string][] = [];
   let refs: Set<string> | null = null;
-  for (let i = 0; i + 2 < log.length; i += 3) {
-    const [name, version, url] = [log[i], log[i + 1], log[i + 2]];
-    installed.push([name, version]);
-    setPkgCache('linked', name, version);
-    // No URL: linked from the cache, nothing to download.
-    if (!url || pkgCache.entries[name]?.version === version) continue;
+  for (let i = 0; i + 3 < log.length; i += 4) {
+    const [name, version, url, where] = [log[i], log[i + 1], log[i + 2], log[i + 3]];
+    if (where === 'tools') toolInstalls.push([name, version]);
+    else {
+      installed.push([name, version]);
+      setPkgCache('linked', name, version);
+    }
+    // No URL: linked from the cache, nothing to download. Installed by you
+    // now: it belongs in shared libraries even if a tool brought it in first.
+    if (!url || pkgCache.entries[name]?.version === version) {
+      if (where !== 'tools' && pkgCache.entries[name]?.user === false)
+        await withIndex((index) => {
+          const e = index[rv]?.[name];
+          if (e) delete e.user;
+        });
+      continue;
+    }
     try {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -285,7 +320,8 @@ export async function captureInstalls(session: RSession): Promise<CachedPackage[
       const file = `packages/${rv}/${name}_${version}.tgz`;
       await fs.writeAppFile(file, data);
       const entry: CachedPackage = { name, version, rVersion: rv, file, url, size: data.length, cachedAt: Date.now() };
-      refs ??= await referencedVersions();
+      if (where === 'tools') entry.user = false;
+      refs ??= new Set([...(await referencedVersions()), ...Object.entries((await readTools())[rv] ?? {}).map(([n, v]) => `${n}@${v}`)]);
       const used = refs;
       await withIndex(async (index) => {
         const pkgs = (index[rv] ??= {});
@@ -300,9 +336,20 @@ export async function captureInstalls(session: RSession): Promise<CachedPackage[
       });
       setPkgCache('updates', name, undefined!);
       added.push(entry);
+      // Into the cache mounts now too, so other workspaces can link it this session.
+      await mountCached(session, entry).catch((e) => console.warn(`could not mount ${name} in the cache`, e));
     } catch (e) {
       console.warn(`could not cache ${name} ${version}:`, e);
     }
+  }
+  // The IDE's tools are remembered separately, with everything they depend
+  // on (even packages that were already installed), to relink at every start.
+  if (toolInstalls.length) {
+    const all = await readTools();
+    const flat = await session.strings(`.ide_tool_closure(c(${toolInstalls.map(([n]) => rString(n)).join(',')}))`).catch(() => [] as string[]);
+    for (let i = 0; i + 1 < flat.length; i += 2) (all[rv] ??= {})[flat[i]] = flat[i + 1];
+    for (const [n, v] of toolInstalls) (all[rv] ??= {})[n] = v;
+    await fs.writeAppFile(TOOLS, JSON.stringify(all, null, 1));
   }
   // A workspace with its own library records what it installs.
   const lib = wsConfig.library;

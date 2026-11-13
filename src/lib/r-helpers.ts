@@ -115,17 +115,23 @@ local({
   # Cached package images are mounted under 'cache' as <pkg>_<version> (not on
   # .libPaths()); the library 'lib' holds links to the ones this workspace
   # uses, plus packages installed in this session.
+  # 'tools' holds packages the IDE itself uses (codetools for problem checks,
+  # styler for formatting). It's last on .libPaths(), so these never become
+  # part of a workspace's library or its renv.lock.
   e$.ide_pkg_cache <- ""
-  e$.ide_pkg_setup <- function(lib, cache) {
-    dir.create(lib, recursive = TRUE, showWarnings = FALSE)
-    dir.create(cache, recursive = TRUE, showWarnings = FALSE)
-    .libPaths(c(lib, .libPaths()))
+  e$.ide_pkg_tools <- ""
+  e$.ide_pkg_setup <- function(lib, cache, tools) {
+    for (d in c(lib, cache, tools)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+    .libPaths(c(lib, .libPaths(), tools))
     e$.ide_pkg_lib <- lib
     e$.ide_pkg_cache <- cache
+    e$.ide_pkg_tools <- tools
     ns <- asNamespace("webr")
-    record <- function(repo, pkg, pkg_ver) {
+    where <- function(lib) if (identical(normalizePath(lib, mustWork = FALSE), normalizePath(tools, mustWork = FALSE))) "tools" else "lib"
+    # The install log: (package, version, url or "" if linked from the cache, "lib" or "tools").
+    record <- function(repo, lib, pkg, pkg_ver) {
       url <- file.path(sub("file:", "", repo, fixed = TRUE), paste0(pkg, "_", pkg_ver, ".tgz"))
-      e$.ide_pkg_log <- c(e$.ide_pkg_log, pkg, as.character(pkg_ver), url)
+      e$.ide_pkg_log <- c(e$.ide_pkg_log, pkg, as.character(pkg_ver), url, where(lib))
     }
     # Hidden markers on stderr let the IDE show install progress while R is
     # still busy downloading (the console strips them).
@@ -140,21 +146,21 @@ local({
       # Already in the cache: link it instead of downloading (works offline).
       cached <- file.path(e$.ide_pkg_cache, paste0(pkg, "_", pkg_ver))
       if (nzchar(e$.ide_pkg_cache) && file.exists(file.path(cached, "DESCRIPTION"))) {
-        e$.ide_pkg_unlink(pkg)
-        if (file.symlink(cached, file.path(e$.ide_pkg_lib, pkg))) {
-          e$.ide_pkg_log <- c(e$.ide_pkg_log, pkg, as.character(pkg_ver), "")
+        e$.ide_pkg_unlink(pkg, lib)
+        if (file.symlink(cached, file.path(lib, pkg))) {
+          e$.ide_pkg_log <- c(e$.ide_pkg_log, pkg, as.character(pkg_ver), "", where(lib))
           return(invisible(TRUE))
         }
       }
       res <- orig_vfs(repo, lib, pkg, pkg_ver)
-      record(repo, pkg, pkg_ver)
+      record(repo, lib, pkg, pkg_ver)
       invisible(res)
     }
     hooked_tgz <- function(repo, lib, pkg, pkg_ver) {
       signal("install-start", pkg, pkg_ver)
       on.exit(signal("install-end", pkg, pkg_ver))
       res <- orig_tgz(repo, lib, pkg, pkg_ver)
-      record(repo, pkg, pkg_ver)
+      record(repo, lib, pkg, pkg_ver)
       invisible(res)
     }
     utils::assignInNamespace("install_vfs_image", hooked_vfs, ns = "webr")
@@ -169,8 +175,8 @@ local({
   }
 
   # Remove a library entry: a link to the cache, or an image mounted this session.
-  e$.ide_pkg_unlink <- function(pkg) {
-    mp <- file.path(e$.ide_pkg_lib, pkg)
+  e$.ide_pkg_unlink <- function(pkg, lib = e$.ide_pkg_lib) {
+    mp <- file.path(lib, pkg)
     if (nzchar(Sys.readlink(mp))) {
       file.remove(mp)
     } else if (file.exists(mp)) {
@@ -181,12 +187,33 @@ local({
   }
 
   # Link cached packages into the library: dirs are <pkg>_<version> under the cache.
-  e$.ide_pkg_link <- function(pkgs, dirs) {
+  e$.ide_pkg_link <- function(pkgs, dirs, lib = e$.ide_pkg_lib) {
     for (i in seq_along(pkgs)) {
-      e$.ide_pkg_unlink(pkgs[[i]])
-      file.symlink(file.path(e$.ide_pkg_cache, dirs[[i]]), file.path(e$.ide_pkg_lib, pkgs[[i]]))
+      e$.ide_pkg_unlink(pkgs[[i]], lib)
+      file.symlink(file.path(e$.ide_pkg_cache, dirs[[i]]), file.path(lib, pkgs[[i]]))
     }
     invisible(NULL)
+  }
+
+  # Tool packages and everything they need (recursively), with the installed
+  # versions; base and recommended packages left out.
+  e$.ide_tool_closure <- function(pkgs) {
+    ip <- utils::installed.packages(fields = character(0))
+    ip <- ip[!duplicated(ip[, "Package"]), , drop = FALSE]
+    deps <- tools::package_dependencies(pkgs, db = ip, which = c("Depends", "Imports", "LinkingTo"), recursive = TRUE)
+    all <- unique(c(pkgs, unlist(deps)))
+    all <- all[all %in% rownames(ip) & is.na(ip[match(all, ip[, "Package"]), "Priority"])]
+    c(rbind(all, unname(ip[match(all, ip[, "Package"]), "Version"])))
+  }
+
+  # Make an IDE tool package available, installing it into the tools library
+  # if no library has it (never into the workspace's). FALSE if that fails.
+  e$.ide_tool <- function(pkg, install = TRUE) {
+    if (!nzchar(system.file(package = pkg))) {
+      if (!install || !nzchar(e$.ide_pkg_tools)) return(FALSE)
+      try(suppressMessages(webr::install(pkg, lib = e$.ide_pkg_tools, quiet = TRUE)), silent = TRUE)
+    }
+    requireNamespace(pkg, quietly = TRUE)
   }
 
   # Packages from the user library loaded in this session, with versions:

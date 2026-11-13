@@ -763,11 +763,7 @@ export async function styleCode(text: string, scope: 'tokens' | 'indention' = 't
     return { ok: false, missing: false, message: String(e) };
   }
   const out = res[0];
-  if (out === undefined || out === null || out === 'NA') {
-    // NA_character_ comes back as null (or the string "NA" on some versions).
-    const installed = await ask('as.character(requireNamespace("styler", quietly = TRUE))', 0);
-    if (installed?.[0] !== 'TRUE') return { ok: false, missing: true, message: 'styler is not installed' };
-  }
+  if (out === '\x02') return { ok: false, missing: true, message: 'styler is not installed' };
   if (typeof out === 'string' && out.startsWith('\x01')) return { ok: false, missing: false, message: out.slice(1).split('\n')[0] };
   return { ok: true, text: out ?? text };
 }
