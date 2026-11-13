@@ -16,6 +16,7 @@ import * as fs from '../lib/opfs';
 import { askText, confirmDialog, formatBytes, isDark, kbd, setThemePref, themePref, toast } from '../lib/ui';
 import { Icon } from './Icon';
 import { openStorageInfo } from './StorageInfo';
+import { openShortcuts } from './Shortcuts';
 import { rKeyboardEnabled, setRKeyboardEnabled } from '../lib/rkeyboard';
 import { resetLayout } from './Workbench';
 import { EXAMPLES, EXAMPLE_GROUPS, Example } from '../lib/examples';
@@ -337,6 +338,15 @@ export function TopBar() {
                 }}
               >
                 <Icon name="grid" /> Reset Pane Layout
+              </button>
+              <button
+                class="menu-item"
+                onClick={() => {
+                  setWsMenu(false);
+                  openShortcuts();
+                }}
+              >
+                <Icon name="keyboard" /> Keyboard Shortcuts
               </button>
               <Show when={touchScreen}>
                 <button class="menu-item" role="menuitemcheckbox" aria-checked={rKeyboardEnabled()} onClick={() => setRKeyboardEnabled(!rKeyboardEnabled())}>

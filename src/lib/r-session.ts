@@ -1,6 +1,7 @@
 import { WebR, ChannelType } from 'webr';
 import { R_HELPERS } from './r-helpers';
 import { R_NOTEBOOK } from './r-notebook';
+import { R_INTEL } from './r-intel';
 import { WEBR_BASE_URL, mountBaseLibrary } from './webr-runtime';
 
 export type SessionEvent =
@@ -110,6 +111,7 @@ export class RSession {
       if (base.failed.length) console.warn('base library: some parts failed to load', base.failed);
       await this.webR.evalRVoid(R_HELPERS);
       await this.webR.evalRVoid(R_NOTEBOOK);
+      await this.webR.evalRVoid(R_INTEL);
       await this.setPlotSize(plotSize.width, plotSize.height);
       if (onInit) {
         try {

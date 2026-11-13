@@ -4,6 +4,7 @@ import { PhoneTabs, Workbench } from './components/Workbench';
 import { Modals } from './components/Modals';
 import { PresenterView } from './components/Presenter';
 import { StorageBanner, StorageInfo } from './components/StorageInfo';
+import { Shortcuts } from './components/Shortcuts';
 import { PackageBrowser } from './components/PackageBrowser';
 import { consoleApi } from './components/Console';
 import { editor, initWorkspaces, openWorkspaceUI, setState, startR, state, restartR } from './lib/ide';
@@ -93,6 +94,7 @@ export function App() {
         <Workbench />
         <PhoneTabs />
         <Modals />
+        <Shortcuts />
         <PresenterView />
         <StorageInfo />
         <StorageBanner />

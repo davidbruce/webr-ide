@@ -3,7 +3,12 @@
 An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to WebAssembly). It runs entirely in the browser and is designed for iPad Safari. It can be installed as a PWA.
 
 - **Script:** [Monaco](https://microsoft.github.io/monaco-editor/) editor with tabs, R syntax highlighting, and completions from R itself
-- **Console:** [wterm](https://wterm.dev/) terminal with line editing, history, Tab completion, and Ctrl+C to interrupt
+- **Code intelligence:** syntax errors underlined as you type (an unclosed bracket points at the bracket); argument hints while typing a call, with the current argument highlighted; hovering a function shows its usage and help summary; F1 opens its help; F2 or ⌘-click jumps to where a function is defined in your workspace
+- **Outline:** the ☰ button (⌘⇧O) lists `# Section ----` comments, functions, Quarto headings and chunks, and jumps to them
+- **Formatting:** ⌘⇧A reformats the selection, script or chunk with [styler](https://styler.r-lib.org) (installed on first use), ⌘I reindents, ⌘/ (or RStudio's ⌘⇧C) comments or uncomments lines
+- **Find in files:** the sidebar's **Search** tab (⌘⇧F) searches the workspace, including unsaved tabs, with match case, whole word and regex, and replaces in one file or all
+- **Command palette and shortcuts:** ⌘ button or ⌘⇧P for every IDE command; ⌥⇧K (or the workspace menu) lists the shortcuts
+- **Console:** [wterm](https://wterm.dev/) terminal with line editing, history, Tab completion, and Ctrl+C to interrupt. File locations in errors, such as `(from analysis.R#12)` or `analysis.R:3:5`, are underlined; tap one to open the file at that line
 - **Environment / History:** objects grouped as Data, Values, and Functions; expandable `str()` views; `View()` data viewer; command history with *To Console* and *To Source*
 - **Plots / Packages / Help:** plot history, an **Expand** button that re-renders the plot full size in a closable window, PNG save and download, package install and attach, and R help pages
 - **Files sidebar:** create, rename, delete, upload, download, and drag-and-drop; import CSV files; source scripts
@@ -84,7 +89,7 @@ Only search text and package names are sent to R-universe.
 Every install path is tracked: `webr::install()`, `install.packages()`, `library()` auto-installing a missing package (from the console or a script), and the package browser. The IDE wraps webR's installer, and the wrapper emits hidden progress markers that the console strips out. While a download runs:
 
 - an overlay with a spinner covers the script editor, showing the current package and a running count, and the editor is read-only;
-- Run, Run All and Source are disabled;
+- Run, Source and Run All (Quarto) are disabled;
 - the status pill reads *Installing &lt;pkg&gt;…*.
 
 Downloads served from the browser cache finish in milliseconds. To avoid a flash, the overlay only appears for installs that take longer than 150 ms, and then stays up for at least 400 ms.
@@ -152,7 +157,7 @@ The same shortcuts work on all platforms: ⌘ on Mac and iPad keyboards is Ctrl 
 | Action | Mac / iPad | Windows / Linux |
 |---|---|---|
 | Run line / selection (**Run**) | ⌘↩ (or ⌃↩) | Ctrl+Enter |
-| Run whole script, or every chunk (**Run All**) | ⌘⌥R | Ctrl+Alt+R |
+| Quarto: run every chunk (**Run All**); in a script, source it | ⌘⌥R | Ctrl+Alt+R |
 | Source file with echo (in a Quarto document: run the current chunk) | ⌘⇧↩ | Ctrl+Shift+Enter |
 | Quarto: run chunk / run all chunks above / insert chunk | ⌘⌥C / ⌘⌥P / ⌘⌥I | Ctrl+Alt+C / Ctrl+Alt+P / Ctrl+Alt+I |
 | Quarto: render to the Preview tab | ⌘⇧K | Ctrl+Shift+K |

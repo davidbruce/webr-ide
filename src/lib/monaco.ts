@@ -5,7 +5,6 @@ import CssWorker from 'monaco-editor/language/css/css.worker?worker';
 import HtmlWorker from 'monaco-editor/language/html/html.worker?worker';
 import TsWorker from 'monaco-editor/language/typescript/ts.worker?worker';
 import { conf as mdConf, language as mdLanguage } from 'monaco-editor/languages/definitions/markdown/markdown.js';
-import { completions } from './ide';
 
 (self as any).MonacoEnvironment = {
   getWorker(_: string, label: string) {
@@ -121,37 +120,7 @@ export function inRChunk(model: monaco.editor.ITextModel, line: number): boolean
   return false;
 }
 
-// R completions backed by R's own completion engine (utils:::.completeToken).
-const rCompletions: monaco.languages.CompletionItemProvider = {
-  triggerCharacters: ['$', '@', ':', '('],
-  async provideCompletionItems(model, position) {
-    if (model.getLanguageId() === 'quarto' && !inRChunk(model, position.lineNumber)) return { suggestions: [] };
-    const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-    const { token, items, fn } = await completions(line);
-    if (!items.length) return { suggestions: [] };
-    const range = new monaco.Range(position.lineNumber, position.column - token.length, position.lineNumber, position.column);
-    // Functions get () with the cursor inside, unless a ( already follows.
-    const parenFollows = model.getLineContent(position.lineNumber).slice(position.column - 1).trimStart().startsWith('(');
-    const K = monaco.languages.CompletionItemKind;
-    return {
-      suggestions: items.slice(0, 500).map((label, i) => {
-        const isFn = fn[i] && !parenFollows;
-        return {
-          label,
-          kind: fn[i] ? K.Function : label.endsWith('=') || label.endsWith('= ') ? K.Property : label.includes('::') ? K.Module : K.Variable,
-          insertText: isFn ? `${label.replace(/[\\$}]/g, '\\$&')}($0)` : label,
-          insertTextRules: isFn ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-          // Then offer the function's argument names.
-          command: isFn ? { id: 'editor.action.triggerSuggest', title: 'Arguments' } : undefined,
-          range,
-          sortText: String(i).padStart(5, '0'),
-        };
-      }),
-    };
-  },
-};
-monaco.languages.registerCompletionItemProvider('r', rCompletions);
-monaco.languages.registerCompletionItemProvider('quarto', rCompletions);
+// R completions, hints and help live in ./language.ts.
 
 /**
  * From `start` (1-based line), find the last line of the R statement that

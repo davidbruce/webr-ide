@@ -1,6 +1,7 @@
 import { createSignal, batch } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import * as fs from './opfs';
+import { invalidateText } from './text-cache';
 import { RSession, HOME, rString } from './r-session';
 import { toast } from './ui';
 import { setupPackages, captureInstalls } from './packages';
@@ -47,6 +48,14 @@ export interface EditorApi {
   setQuickSuggest?(on: boolean): void;
   /** Render the active Quarto / R Markdown document into the Preview tab. */
   renderActive?(): void;
+  /** Open a file and select a range in it (1-based lines and columns). */
+  openAt?(path: string, line: number, column: number, endLine?: number, endColumn?: number): Promise<void>;
+  /** Text of a file open in a tab (with unsaved edits), or null if it isn't open. */
+  openText?(path: string): string | null;
+  /** Edit a file open in a tab (undoable); false if it isn't open. */
+  editOpen?(path: string, edits: { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; text: string }[]): boolean;
+  /** Run an editor command by id (command palette, outline, shortcuts). */
+  command?(id: string): void;
 }
 
 export type PaneId = 'script' | 'console' | 'env' | 'plots';
@@ -557,6 +566,7 @@ async function loadWorkspaceIntoR(restoreImage: boolean): Promise<string> {
 /** Write a file from the IDE into both OPFS and R. */
 export async function writeWorkspaceFile(path: string, data: Uint8Array | string): Promise<void> {
   const ws = state.workspace;
+  invalidateText(ws, path);
   if (state.fileMode === 'drive' && driveMounted) {
     // Through the service worker, so it waits if R is part-way through reading the file.
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
@@ -593,6 +603,7 @@ export async function makeFolder(path: string) {
 }
 
 export async function deletePath(path: string) {
+  invalidateText(state.workspace, path);
   await fs.remove(state.workspace, path);
   if (session.status === 'ready' && state.fileMode === 'mirror')
     await session.evalVoid(`unlink(${rString(`${rRoot()}/${path}`)}, recursive = TRUE)`).catch(() => {});
@@ -602,6 +613,7 @@ export async function deletePath(path: string) {
 }
 
 export async function renamePath(from: string, to: string) {
+  invalidateText(state.workspace, from);
   await fs.rename(state.workspace, from, to);
   if (session.status === 'ready' && state.fileMode === 'mirror') {
     const dir = fs.dirname(to);

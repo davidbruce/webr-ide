@@ -1,7 +1,8 @@
 import { getOwner, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
 import { WTerm } from '@wterm/dom';
 import '@wterm/dom/css';
-import { session, state, completions, restartR, rDisplayPath } from '../lib/ide';
+import { session, state, completions, restartR, rDisplayPath, rRoot, editor } from '../lib/ide';
+import { flattenTree } from '../lib/opfs';
 import { Icon } from './Icon';
 import { confirmDialog, kbd } from '../lib/ui';
 import { PaneHeader } from './Pane';
@@ -12,6 +13,34 @@ const RED = '\x1b[38;2;200;40;40m';
 const RED_DARK = '\x1b[38;2;255;120;120m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
+const UNDERLINE = '\x1b[4m';
+const NO_UNDERLINE = '\x1b[24m';
+
+// Places in R error messages: "(from test.R#12)" (runtime errors in source()d
+// files) and "test.R:3:5:" (parse errors).
+const LOC_FROM = /\(from ([^()#\s]+)#(\d+)\)/;
+const LOC_PARSE = /((?:~|\/)?[^\s:"'()]*\.(?:[Rr]|[qQRr]md)):(\d+):(\d+)/;
+const LOCATIONS = new RegExp(`${LOC_FROM.source}|${LOC_PARSE.source}`, 'g');
+
+/** A file named in an R message → workspace path, line, column. */
+function resolveLocation(text: string): { path: string; line: number; column: number } | null {
+  const m = LOC_FROM.exec(text) ?? LOC_PARSE.exec(text);
+  if (!m) return null;
+  const file = m[1];
+  const line = Number(m[2]);
+  const column = Number(m[3] ?? 1) || 1;
+  const files = flattenTree(state.tree).filter((n) => n.kind === 'file');
+  for (const pre of [`~/${state.workspace}/`, `${rRoot()}/`]) {
+    if (file.startsWith(pre)) {
+      const p = file.slice(pre.length);
+      return files.some((n) => n.path === p) ? { path: p, line, column } : null;
+    }
+  }
+  const exact = files.find((n) => n.path === file.replace(/^\.\//, ''));
+  const byName = files.filter((n) => n.name === file.split('/').pop());
+  const hit = exact ?? byName[0];
+  return hit ? { path: hit.path, line, column } : null;
+}
 
 export let consoleApi: { focus(): void; clear(): void; insert(text: string): void; /** Feed keystrokes as if typed (e.g. from the phone key bar). */ input(data: string): void; /** Input line before the cursor. */ beforeCursor(): string } | null = null;
 
@@ -390,7 +419,7 @@ export function ConsolePane() {
         case 'stderr':
           // Package download notices are informational, not errors.
           if (/^Downloading webR package: /.test(ev.text)) output(DIM + nl(ev.text) + RESET + '\r\n');
-          else output(errColor() + nl(ev.text) + RESET + '\r\n');
+          else output(errColor() + nl(ev.text).replace(LOCATIONS, (l) => UNDERLINE + l + NO_UNDERLINE) + RESET + '\r\n');
           break;
         case 'echo':
           flushNow();
@@ -472,7 +501,25 @@ export function ConsolePane() {
           </>
         }
       />
-      <div class="pane-body console-body" onClick={() => term?.focus()}>
+      <div
+        class="pane-body console-body"
+        onClick={(e) => {
+          // A file location in an error message: open it at that line.
+          const row = (e.target as Element).closest?.('.term-row');
+          if (row && !window.getSelection()?.toString()) {
+            // Neighbouring rows too: a long message wraps across rows.
+            const [a, b, c] = [row.previousElementSibling, row, row.nextElementSibling].map((r) => r?.textContent ?? '');
+            const all = a + b + c;
+            const hit = [...all.matchAll(LOCATIONS)].find((m) => m.index < a.length + b.length && m.index + m[0].length > a.length);
+            const loc = hit ? resolveLocation(hit[0]) : null;
+            if (loc && editor()?.openAt) {
+              void editor()!.openAt!(loc.path, loc.line, loc.column);
+              return;
+            }
+          }
+          term?.focus();
+        }}
+      >
         <div ref={host} class="console-term" />
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
+import { Portal } from 'solid-js/web';
 import { monaco, languageFor, statementEnd, isTabularName, TEXT_VIEW_MAX, GRID_MAX, extOf, inRChunk, softFocus } from '../lib/monaco';
 import { attachNotebook, type NotebookControls } from './Notebook';
 import { preview, renderDocument } from '../lib/render';
@@ -20,10 +21,14 @@ import {
   setState,
 } from '../lib/ide';
 import { rString } from '../lib/r-session';
-import { askText, choiceDialog, isDark, kbd, toast } from '../lib/ui';
+import { askText, choiceDialog, confirmDialog, isDark, kbd, toast } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
+import { outline, rRegions, styleCode, findDefinitions, symbolAt, type OutlineItem, type DefinitionHit } from '../lib/language';
+import { installPackages } from '../lib/pkg-actions';
+import { openShortcuts } from './Shortcuts';
+import { openFindInFiles } from './SearchPanel';
 
 interface Tab {
   key: string;
@@ -353,7 +358,207 @@ export function EditorPane() {
     );
   }
 
+  // ---------------------------------------------------------------- navigation
+
+  const keyOfUri = (uri: monaco.Uri) => tabs.list.find((t) => models.get(t.key)?.uri.toString() === uri.toString())?.key ?? null;
+  const pathOfUri = (uri: monaco.Uri) => tabs.list.find((t) => t.key === keyOfUri(uri))?.path ?? null;
+
+  function select(range: monaco.IRange) {
+    ed.setSelection(range);
+    ed.revealRangeInCenterIfOutsideViewport(range, monaco.editor.ScrollType.Smooth);
+  }
+
+  async function openAt(path: string, line: number, column: number, endLine = line, endColumn = column) {
+    await openFile(path);
+    const t = tabs.list.find((x) => x.path === path);
+    if (!t || t.gridOnly) return;
+    if (t.mode === 'grid') patchTab(t.key, { mode: 'text' });
+    showPane('script');
+    select(new monaco.Range(line, column, endLine, endColumn));
+    softFocus(ed);
+  }
+
+  function jumpTo(hit: DefinitionHit) {
+    const key = hit.uri && keyOfUri(hit.uri);
+    if (key) {
+      activate(key);
+      select(new monaco.Range(hit.line, hit.column, hit.line, hit.column));
+    } else if (hit.path) void openAt(hit.path, hit.line, hit.column);
+  }
+
+  /** R help for the name at the cursor, in the Help tab. */
+  function helpAtCursor() {
+    const model = ed?.getModel();
+    const pos = ed?.getPosition();
+    const sym = model && pos ? symbolAt(model, pos) : null;
+    if (!sym) return toast('Put the cursor on a function name to see its help', 'warn');
+    showHelp(sym.name);
+  }
+
+  function showHelp(name: string) {
+    if (session.status !== 'ready') return toast('R is still starting…', 'warn');
+    const [pkg, topic] = name.includes('::') ? name.split(/:::?/) : [null, name];
+    session.submit(`help(${rString(topic)}${pkg ? `, package = ${rString(pkg)}` : ''})`);
+  }
+
+  async function goToDefinition() {
+    const model = ed?.getModel();
+    const pos = ed?.getPosition();
+    const sym = model && pos ? symbolAt(model, pos) : null;
+    if (!sym) return;
+    if (!sym.name.includes('::')) {
+      const hits = await findDefinitions(sym.name, model, pathOfUri);
+      // Not on the definition itself: jump to the first one elsewhere.
+      const target = hits.find((h) => !(h.uri?.toString() === model!.uri.toString() && h.line === pos!.lineNumber)) ?? hits[0];
+      if (target) return jumpTo(target);
+    }
+    toast(`${sym.name} isn't defined in this workspace — showing its help`);
+    showHelp(sym.name);
+  }
+
+  // ---------------------------------------------------------------- formatting
+
+  /** Replace lines from..to with `text`, editing only the lines that differ. */
+  function replaceLines(model: monaco.editor.ITextModel, from: number, to: number, text: string): boolean {
+    const oldL = model.getLinesContent().slice(from - 1, to);
+    const newL = text.split('\n');
+    let a = 0;
+    while (a < oldL.length && a < newL.length && oldL[a] === newL[a]) a++;
+    let b = 0;
+    while (b < oldL.length - a && b < newL.length - a && oldL[oldL.length - 1 - b] === newL[newL.length - 1 - b]) b++;
+    if (a === oldL.length && a === newL.length) return false;
+    const s = from + a;
+    const e = to - b;
+    const mid = newL.slice(a, newL.length - b);
+    let range: monaco.Range;
+    let txt: string;
+    if (e < s) {
+      // Only new lines: insert them before line s.
+      range = s > model.getLineCount() ? new monaco.Range(e, model.getLineMaxColumn(e), e, model.getLineMaxColumn(e)) : new monaco.Range(s, 1, s, 1);
+      txt = s > model.getLineCount() ? '\n' + mid.join('\n') : mid.join('\n') + '\n';
+    } else if (!mid.length) {
+      // Only removed lines.
+      range = s > 1 ? new monaco.Range(s - 1, model.getLineMaxColumn(s - 1), e, model.getLineMaxColumn(e)) : new monaco.Range(s, 1, e + 1, 1);
+      txt = '';
+    } else {
+      range = new monaco.Range(s, 1, e, model.getLineMaxColumn(e));
+      txt = mid.join('\n');
+    }
+    ed.pushUndoStop();
+    ed.executeEdits('format', [{ range, text: txt }]);
+    ed.pushUndoStop();
+    return true;
+  }
+
+  /** Format the selection, or the whole script / chunk, with styler. */
+  async function formatCode(scope: 'tokens' | 'indention', retried = false) {
+    const model = ed?.getModel();
+    const sel = ed?.getSelection();
+    if (!model || !sel || inGrid()) return;
+    const region = rRegions(model).find((r) => sel.startLineNumber >= r.line && sel.startLineNumber < r.line + r.text.split('\n').length);
+    if (!region) return toast(model.getLanguageId() === 'quarto' ? 'Put the cursor in an R chunk to format it' : 'Only R code can be formatted', 'warn');
+    const regionEnd = region.line + region.text.split('\n').length - 1;
+    let from = region.line;
+    let to = regionEnd;
+    if (!sel.isEmpty()) {
+      from = Math.max(from, sel.startLineNumber);
+      to = Math.min(to, sel.endColumn === 1 && sel.endLineNumber > sel.startLineNumber ? sel.endLineNumber - 1 : sel.endLineNumber);
+    }
+    const version = model.getVersionId();
+    let res;
+    let text: string;
+    if (scope === 'indention') {
+      // Re-indent the whole script or chunk (indentation depends on what
+      // surrounds the selection), then keep only the selected lines.
+      res = await styleCode(region.text, 'indention');
+      if (res.ok) {
+        const out = res.text.split('\n');
+        if (out.length === regionEnd - region.line + 1) text = out.slice(from - region.line, to - region.line + 1).join('\n');
+        else {
+          from = region.line;
+          to = regionEnd;
+          text = res.text;
+        }
+      }
+    } else {
+      const lines = model.getLinesContent().slice(from - 1, to);
+      const indent = lines.filter((l) => l.trim()).reduce<string | null>((m, l) => {
+        const ws = /^\s*/.exec(l)![0];
+        return m === null || ws.length < m.length ? ws : m;
+      }, null) ?? '';
+      res = await styleCode(lines.map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart())).join('\n'));
+      if (res.ok) text = res.text.split('\n').map((l) => (l ? indent + l : l)).join('\n');
+    }
+    if (!res.ok) {
+      if (res.missing && !retried) {
+        const ok = await confirmDialog(
+          'Install styler?',
+          'Formatting R code uses the styler package. Install it now? It downloads once and is saved for offline use.',
+          { okLabel: 'Install' },
+        );
+        if (!ok) return;
+        installPackages(['styler']);
+        await new Promise((r) => setTimeout(r, 50));
+        if (await session.waitIdle(10 * 60_000)) return formatCode(scope, true);
+        return;
+      }
+      return toast(`Couldn't format: ${res.message}`, 'error', 7000);
+    }
+    if (model.isDisposed() || model.getVersionId() !== version) return toast('The code changed while formatting — try again', 'warn');
+    if (!replaceLines(model, from, to, text!)) toast(scope === 'indention' ? 'Indentation is already tidy' : 'Already formatted');
+  }
+
+  // ---------------------------------------------------------------- outline
+
+  const [outlineMenu, setOutlineMenu] = createSignal<null | { items: OutlineItem[]; current: number; x: number; y: number }>(null);
+  let outlineBtn!: HTMLButtonElement;
+
+  function openOutline() {
+    const model = ed?.getModel();
+    if (!model || inGrid()) return;
+    const items = outline(model);
+    const line = ed.getPosition()?.lineNumber ?? 1;
+    let current = -1;
+    items.forEach((it, i) => it.line <= line && (current = i));
+    const r = outlineBtn.getBoundingClientRect();
+    setOutlineMenu({ items, current, x: Math.min(r.left, window.innerWidth - 300), y: r.bottom + 4 });
+    queueMicrotask(() => document.querySelector('.outline-menu .menu-item.current')?.scrollIntoView({ block: 'center' }));
+  }
+
+  function goToLine(line: number) {
+    setOutlineMenu(null);
+    ed.setPosition({ lineNumber: line, column: 1 });
+    ed.revealLineNearTop(line, monaco.editor.ScrollType.Smooth);
+    softFocus(ed);
+  }
+
+  function palette() {
+    if (!ed?.getModel()) return;
+    ed.focus();
+    ed.trigger('toolbar', 'editor.action.quickCommand', null);
+  }
+
   const api: EditorApi = {
+    openAt,
+    openText(path) {
+      const t = tabs.list.find((x) => x.path === path);
+      const m = t && models.get(t.key);
+      return m ? m.getValue() : null;
+    },
+    editOpen(path, edits) {
+      const t = tabs.list.find((x) => x.path === path);
+      const m = t && models.get(t.key);
+      if (!m) return false;
+      m.pushStackElement();
+      m.pushEditOperations([], edits.map((e) => ({ range: monaco.Range.lift(e.range), text: e.text })), () => null);
+      m.pushStackElement();
+      return true;
+    },
+    command(id) {
+      if (id === 'outline') return openOutline();
+      if (id === 'palette') return palette();
+      ed?.getAction(id)?.run();
+    },
     async openFile(path, opts) {
       await openFile(path, opts);
       showPane('script');
@@ -531,7 +736,8 @@ export function EditorPane() {
     ed.addCommand(K.CtrlCmd | K.Shift | C.Enter, () => (isNb() ? notebook!.runAtCursor() : void sourceActive(true)));
     ed.addCommand(K.CtrlCmd | K.Shift | C.KeyS, () => void sourceActive(false));
     ed.addCommand(K.CtrlCmd | C.KeyS, () => void api.saveActive());
-    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyR, () => (isNb() ? notebook!.runAll() : runAll()));
+    // Quarto: every chunk. Scripts: source the file (what "run everything" means there).
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyR, () => (isNb() ? notebook!.runAll() : void sourceActive(false)));
     ed.addCommand(K.CtrlCmd | K.Alt | C.KeyC, () => isNb() && notebook!.runAtCursor());
     ed.addCommand(K.CtrlCmd | K.Alt | C.KeyP, () => isNb() && notebook!.runAbove());
     ed.addCommand(K.CtrlCmd | K.Alt | C.KeyI, () => isNb() && notebook!.insertChunk());
@@ -540,11 +746,81 @@ export function EditorPane() {
     ed.addCommand(K.Alt | C.Minus, () => ed.trigger('kbd', 'type', { text: ' <- ' }));
     ed.addCommand(K.CtrlCmd | C.Digit2, () => consoleApi?.focus());
 
+    // Actions: these also appear in the command palette (⌘⇧P / F1 in Monaco).
+    const action = (id: string, label: string, keys: number[], run: () => void, group?: string) =>
+      ed.addAction({ id, label, keybindings: keys, run, contextMenuGroupId: group, contextMenuOrder: 1 });
+    action('r.reformat', 'Reformat Code (styler)', [K.CtrlCmd | K.Shift | C.KeyA], () => void formatCode('tokens'), '1_modification');
+    action('r.reindent', 'Reindent Lines', [K.CtrlCmd | C.KeyI], () => void formatCode('indention'), '1_modification');
+    // ⌘/ is Monaco's own toggle; ⌘⇧C is RStudio's.
+    action('r.comment', 'Comment / Uncomment Lines', [K.CtrlCmd | K.Shift | C.KeyC], () => ed.trigger('kbd', 'editor.action.commentLine', null), '1_modification');
+    action('r.definition', 'Go to Function Definition', [C.F2], () => void goToDefinition(), 'navigation');
+    action('r.help', 'Help for Name at Cursor', [C.F1], helpAtCursor, 'navigation');
+    action('r.outline', 'Document Outline…', [K.CtrlCmd | K.Shift | C.KeyO], openOutline);
+    action('r.runLine', 'Run Current Line or Selection', [], runSelection);
+    action('r.runAll', 'Run All Chunks (Quarto)', [], () => isNb() && notebook!.runAll());
+    action('r.source', 'Source File', [], () => void sourceActive(false));
+    action('r.render', 'Render Document', [], renderActive);
+    action('r.insertChunk', 'Insert R Chunk', [], () => isNb() && notebook!.insertChunk());
+    action('r.save', 'Save File', [], () => void api.saveActive());
+    action('r.saveAll', 'Save All Files', [], () => void api.saveAll());
+    action('r.newScript', 'New R Script', [], () => newFile());
+    action('r.findInFiles', 'Find in Files…', [K.CtrlCmd | K.Shift | C.KeyF], () => openFindInFiles(ed.getModel()?.getValueInRange(ed.getSelection()!) ?? ''));
+    action('r.shortcuts', 'Keyboard Shortcuts', [K.Alt | K.Shift | C.KeyK], openShortcuts);
+    action('r.focusConsole', 'Move Focus to Console', [], () => consoleApi?.focus());
+    action('r.palette', 'Command Palette', [K.CtrlCmd | K.Shift | C.KeyP], palette);
+    // F1 is R help here (as in RStudio); the palette is ⌘⇧P.
+    monaco.editor.addKeybindingRule({ keybinding: C.F1, command: '-editor.action.quickCommand' });
+
+    // ⌘-click / F12 on a function: its definition in an open tab.
+    const defProvider = monaco.languages.registerDefinitionProvider(['r', 'quarto'], {
+      async provideDefinition(model, position) {
+        const sym = symbolAt(model, position);
+        if (!sym || sym.name.includes('::')) return null;
+        const hits = await findDefinitions(sym.name, model, pathOfUri);
+        return hits.map((h) => ({
+          uri: h.uri ?? monaco.Uri.from({ scheme: 'webr-ws', path: `/${h.path}` }),
+          range: new monaco.Range(h.line, h.column, h.line, h.column + sym.name.length),
+        }));
+      },
+    });
+    const opener = monaco.editor.registerEditorOpener({
+      openCodeEditor(_source, resource, sel) {
+        const at = sel && 'startLineNumber' in sel ? sel : sel ? { startLineNumber: sel.lineNumber, startColumn: sel.column, endLineNumber: sel.lineNumber, endColumn: sel.column } : null;
+        if (resource.scheme === 'webr-ws') {
+          const path = decodeURIComponent(resource.path.slice(1));
+          void openAt(path, at?.startLineNumber ?? 1, at?.startColumn ?? 1, at?.endLineNumber, at?.endColumn);
+          return true;
+        }
+        const key = keyOfUri(resource);
+        if (!key) return false;
+        activate(key);
+        if (at) select(at);
+        return true;
+      },
+    });
+    onCleanup(() => {
+      defProvider.dispose();
+      opener.dispose();
+    });
+
+    // Show the suggestion details (signature and help) beside the list by
+    // default with a mouse; ⌃Space hides them. Phones keep the compact list.
+    if (!window.matchMedia('(pointer: coarse)').matches) {
+      try {
+        const widget = (ed.getContribution('editor.contrib.suggestController') as any)?.widget?.value;
+        widget?._storageService?.store('expandSuggestionDocs', true, 0 /* profile */, 0 /* user */);
+      } catch (e) {
+        console.warn('could not expand suggestion details', e);
+      }
+    }
+
     createEffect(() => monaco.editor.setTheme(isDark() ? 'rstudio-dark' : 'rstudio-light'));
     // Touch screens: allow scrolling past the end, so the last lines can be
     // brought up above the on-screen keyboard.
     const coarse = window.matchMedia('(pointer: coarse)');
-    const scrollPast = () => ed.updateOptions({ scrollBeyondLastLine: coarse.matches });
+    // The separate argument-hint popup only on touch screens; with a mouse,
+    // argument names and their help are in the suggestion list.
+    const scrollPast = () => ed.updateOptions({ scrollBeyondLastLine: coarse.matches, parameterHints: { enabled: coarse.matches } });
     scrollPast();
     coarse.addEventListener('change', scrollPast);
     onCleanup(() => coarse.removeEventListener('change', scrollPast));
@@ -648,6 +924,18 @@ export function EditorPane() {
         </button>
         <button class="tb-btn" title="Find / Replace" disabled={!activeTab() || inGrid()} onClick={() => ed.getAction('actions.find')?.run()}>
           <Icon name="search" />
+        </button>
+        <button
+          ref={outlineBtn}
+          class="tb-btn"
+          title={`Outline: sections, functions and headings (${kbd('mod+shift+O')})`}
+          disabled={!activeTab() || inGrid() || !['r', 'quarto', 'markdown'].includes(activeTab()!.language)}
+          onClick={openOutline}
+        >
+          <Icon name="outline" />
+        </button>
+        <button class="tb-btn" title={`Command palette (${kbd('mod+shift+P')})`} disabled={!activeTab() || inGrid()} onClick={palette}>
+          <Icon name="command" />
         </button>
         <Show when={isTabular()}>
           <span class="tb-sep" />
@@ -758,18 +1046,6 @@ export function EditorPane() {
           <span>Run</span>
         </button>
         <button
-          class="tb-btn labeled run"
-          disabled={!activeTab() || !isR() || state.rStatus !== 'ready' || isInstalling()}
-          title={`Run the whole script (${kbd('mod+alt+R')})`}
-          onClick={() => {
-            runAll();
-            softFocus(ed);
-          }}
-        >
-          <Icon name="run-all" />
-          <span>Run All</span>
-        </button>
-        <button
           class="tb-btn labeled"
           disabled={!activeTab() || !isR() || state.rStatus !== 'ready' || isInstalling()}
           title={`Source the file (${kbd('mod+shift+S')}) — long-press or ${kbd('mod+shift+enter')} to echo`}
@@ -811,6 +1087,43 @@ export function EditorPane() {
         <Show when={inGrid() && activeTab()} keyed>
           {(t) => <GridView tab={t} />}
         </Show>
+        <Show when={outlineMenu()}>
+          {(m) => (
+            <Portal>
+              <div class="menu-backdrop" onClick={() => setOutlineMenu(null)}>
+                <div class="menu outline-menu" style={{ left: `${Math.max(8, m().x)}px`, top: `${m().y}px` }} onClick={(e) => e.stopPropagation()}>
+                  <div class="menu-title">Outline</div>
+                  <div class="menu-scroll">
+                    <Show
+                      when={m().items.length}
+                      fallback={
+                        <div class="outline-empty">
+                          Nothing here yet. Add a section with <code># Section ----</code>
+                          {isNb() ? ' or a heading with ## Heading' : ''}, or define a function.
+                        </div>
+                      }
+                    >
+                      <For each={m().items}>
+                        {(it, i) => (
+                          <button
+                            class="menu-item outline-item"
+                            classList={{ current: i() === m().current, [it.kind]: true }}
+                            style={{ 'padding-left': `${10 + it.level * 14}px` }}
+                            onClick={() => goToLine(it.line)}
+                          >
+                            <span class="outline-kind">{it.kind === 'function' ? 'ƒ' : it.kind === 'chunk' ? '{r}' : '#'}</span>
+                            <span class="outline-name">{it.name}</span>
+                            <span class="outline-line">{it.line}</span>
+                          </button>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                </div>
+              </div>
+            </Portal>
+          )}
+        </Show>
         <Show when={!activeTab()}>
           <div class="empty-state">
             <Icon name="file" size={36} />
@@ -824,7 +1137,7 @@ export function EditorPane() {
               </button>
             </div>
             <p class="hint">
-              {kbd('mod+enter')} runs the current line · {kbd('mod+alt+R')} runs the whole script
+              {kbd('mod+enter')} runs the current line · {kbd('mod+shift+S')} sources the whole script
             </p>
           </div>
         </Show>

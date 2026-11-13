@@ -18,6 +18,7 @@ import { rString } from '../lib/r-session';
 import { askText, confirmDialog, formatBytes, setImageView, toast } from '../lib/ui';
 import { extOf, IMAGE_EXT, isBinaryName, isTabularName } from '../lib/monaco';
 import { Icon } from './Icon';
+import { SearchPanel, sidebarMode, setSidebarMode } from './SearchPanel';
 
 interface MenuState {
   node: fs.FileNode;
@@ -191,13 +192,33 @@ export function Sidebar() {
       }}
     >
       <div class="pane-header sidebar-header">
-        <div class="pane-tabs">
-          <span class="pane-tab active static">
+        <div class="pane-tabs" role="tablist">
+          <button role="tab" class="pane-tab" classList={{ active: sidebarMode() === 'files' }} aria-selected={sidebarMode() === 'files'} onClick={() => setSidebarMode('files')}>
             <Icon name="folder" size={14} />
             <span>Files</span>
-          </span>
+          </button>
+          <button role="tab" class="pane-tab" classList={{ active: sidebarMode() === 'search' }} aria-selected={sidebarMode() === 'search'} onClick={() => setSidebarMode('search')}>
+            <Icon name="search" size={14} />
+            <span>Search</span>
+          </button>
         </div>
-        <div class="pane-actions">
+      </div>
+      <Show when={sidebarMode() === 'search'}>
+        <SearchPanel />
+      </Show>
+      <Show when={sidebarMode() === 'files'}>
+      <div
+        class="sidebar-crumb"
+        onClick={() => setState('selectedPath', '')}
+        title={
+          state.fileMode === 'drive'
+            ? 'R reads and writes these files directly in browser storage'
+            : 'Compatibility mode: R works on a copy of these files, synced after each command'
+        }
+      >
+        <Icon name="folder" size={13} />
+        <span class="sidebar-crumb-path">~/{state.workspace}</span>
+        <div class="sidebar-actions" onClick={(e) => e.stopPropagation()}>
           <button class="tb-btn" title="New file" onClick={newFile}>
             <Icon name="file-plus" />
           </button>
@@ -212,18 +233,6 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-      <div
-        class="sidebar-crumb"
-        onClick={() => setState('selectedPath', '')}
-        title={
-          state.fileMode === 'drive'
-            ? 'R reads and writes these files directly in browser storage'
-            : 'Compatibility mode: R works on a copy of these files, synced after each command'
-        }
-      >
-        <Icon name="folder" size={13} />
-        <span>~/{state.workspace}</span>
-      </div>
       <div class="tree scroll" role="tree" onClick={(e) => e.target === e.currentTarget && setState('selectedPath', '')}>
         <For each={state.tree}>{(n) => <Row node={n} depth={0} />}</For>
         <Show when={!state.tree.length}>
@@ -234,6 +243,7 @@ export function Sidebar() {
           </div>
         </Show>
       </div>
+      </Show>
       <input
         ref={uploadInput}
         type="file"
