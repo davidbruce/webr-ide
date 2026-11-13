@@ -4,6 +4,7 @@ import { session, restartR, refreshPackages } from './ide';
 import { loadedAmong, removeCached } from './packages';
 import { rString } from './r-session';
 import { confirmDialog, toast } from './ui';
+import { wsConfig } from './workspace-config';
 
 /** Package names with an install/update in flight. */
 const [installing, setInstalling] = createSignal<Set<string>>(new Set());
@@ -49,7 +50,9 @@ export async function updatePackages(names: string[]) {
 }
 
 export async function removePackage(name: string, version?: string): Promise<boolean> {
-  const ok = await confirmDialog('Remove package', `Remove ${name}${version ? ` ${version}` : ''} from the saved package library?`, {
+  const own = wsConfig.library.mode === 'workspace';
+  const what = `${name}${version ? ` ${version}` : ''}`;
+  const ok = await confirmDialog('Remove package', own ? `Remove ${what} from this workspace's library? It stays saved for other workspaces.` : `Remove ${what} from the saved package library?`, {
     okLabel: 'Remove',
     danger: true,
   });

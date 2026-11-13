@@ -112,10 +112,16 @@ local({
   e$.ide_pkg_log <- character(0)
   e$.ide_pkg_lib <- ""
 
-  e$.ide_pkg_setup <- function(lib) {
+  # Cached package images are mounted under 'cache' as <pkg>_<version> (not on
+  # .libPaths()); the library 'lib' holds links to the ones this workspace
+  # uses, plus packages installed in this session.
+  e$.ide_pkg_cache <- ""
+  e$.ide_pkg_setup <- function(lib, cache) {
     dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+    dir.create(cache, recursive = TRUE, showWarnings = FALSE)
     .libPaths(c(lib, .libPaths()))
     e$.ide_pkg_lib <- lib
+    e$.ide_pkg_cache <- cache
     ns <- asNamespace("webr")
     record <- function(repo, pkg, pkg_ver) {
       url <- file.path(sub("file:", "", repo, fixed = TRUE), paste0(pkg, "_", pkg_ver, ".tgz"))
@@ -131,6 +137,15 @@ local({
     hooked_vfs <- function(repo, lib, pkg, pkg_ver) {
       signal("install-start", pkg, pkg_ver)
       on.exit(signal("install-end", pkg, pkg_ver))
+      # Already in the cache: link it instead of downloading (works offline).
+      cached <- file.path(e$.ide_pkg_cache, paste0(pkg, "_", pkg_ver))
+      if (nzchar(e$.ide_pkg_cache) && file.exists(file.path(cached, "DESCRIPTION"))) {
+        e$.ide_pkg_unlink(pkg)
+        if (file.symlink(cached, file.path(e$.ide_pkg_lib, pkg))) {
+          e$.ide_pkg_log <- c(e$.ide_pkg_log, pkg, as.character(pkg_ver), "")
+          return(invisible(TRUE))
+        }
+      }
       res <- orig_vfs(repo, lib, pkg, pkg_ver)
       record(repo, pkg, pkg_ver)
       invisible(res)
@@ -153,14 +168,42 @@ local({
     out
   }
 
+  # Remove a library entry: a link to the cache, or an image mounted this session.
+  e$.ide_pkg_unlink <- function(pkg) {
+    mp <- file.path(e$.ide_pkg_lib, pkg)
+    if (nzchar(Sys.readlink(mp))) {
+      file.remove(mp)
+    } else if (file.exists(mp)) {
+      try(webr::unmount(mp), silent = TRUE)
+      unlink(mp, recursive = TRUE)
+    }
+    invisible(NULL)
+  }
+
+  # Link cached packages into the library: dirs are <pkg>_<version> under the cache.
+  e$.ide_pkg_link <- function(pkgs, dirs) {
+    for (i in seq_along(pkgs)) {
+      e$.ide_pkg_unlink(pkgs[[i]])
+      file.symlink(file.path(e$.ide_pkg_cache, dirs[[i]]), file.path(e$.ide_pkg_lib, pkgs[[i]]))
+    }
+    invisible(NULL)
+  }
+
+  # Packages from the user library loaded in this session, with versions:
+  # a starting point for a workspace's own library.
+  e$.ide_pkg_snapshot <- function() {
+    ip <- utils::installed.packages(lib.loc = e$.ide_pkg_lib, fields = character(0))
+    keep <- ip[, "Package"] %in% loadedNamespaces()
+    c(rbind(unname(ip[keep, "Package"]), unname(ip[keep, "Version"])))
+  }
+
   # After the IDE mounts cached images: return (and clean up) any that look broken.
   e$.ide_pkg_verify <- function(pkgs) {
     failed <- character(0)
     for (p in pkgs) {
       mp <- file.path(e$.ide_pkg_lib, p)
       if (!file.exists(file.path(mp, "DESCRIPTION"))) {
-        try(webr::unmount(mp), silent = TRUE)
-        unlink(mp, recursive = TRUE)
+        e$.ide_pkg_unlink(p)
         failed <- c(failed, p)
       }
     }
@@ -172,9 +215,7 @@ local({
   # Drop a package from the user library in this session (not if loaded).
   e$.ide_pkg_drop <- function(pkg) {
     if (pkg %in% loadedNamespaces()) return(FALSE)
-    mp <- file.path(e$.ide_pkg_lib, pkg)
-    try(webr::unmount(mp), silent = TRUE)
-    unlink(mp, recursive = TRUE)
+    e$.ide_pkg_unlink(pkg)
     TRUE
   }
 
@@ -229,6 +270,35 @@ local({
 
   # Leave a workspace without touching its files (drive mode: the mounted
   # folder IS the user's files, so never unlink it).
+  # The workspace's .Rprofile, then .First() if it defines one, as R's start-up
+  # does. renv's activation (from a desktop renv project) is skipped: it would
+  # try to bootstrap renv and replace the library; the IDE checks renv.lock
+  # and manages the packages itself.
+  e$.ide_run_rprofile <- function() {
+    if (!file.exists(".Rprofile")) return(invisible(FALSE))
+    exprs <- parse(".Rprofile", keep.source = FALSE)
+    skipped <- FALSE
+    for (x in exprs) {
+      txt <- paste(deparse(x), collapse = " ")
+      if (grepl("renv/activate.R", txt, fixed = TRUE) || grepl("renv::(activate|load|restore|init)\\(", txt)) {
+        skipped <- TRUE
+        next
+      }
+      eval(x, globalenv())
+    }
+    if (skipped) message("Skipped renv activation in .Rprofile: webR IDE manages this workspace's packages (Packages tab > renv.lock).")
+    first <- get0(".First", envir = globalenv(), inherits = FALSE)
+    if (is.function(first)) first()
+    invisible(TRUE)
+  }
+
+  # Packages that come with webR (not from the user library): name, version pairs.
+  e$.ide_builtin_pkgs <- function() {
+    ip <- utils::installed.packages(lib.loc = setdiff(.libPaths(), e$.ide_pkg_lib), fields = character(0))
+    ip <- ip[!duplicated(ip[, "Package"]), , drop = FALSE]
+    c(rbind(unname(ip[, "Package"]), unname(ip[, "Version"])))
+  }
+
   e$.ide_detach_ws <- function() {
     rm(list = ls(envir = globalenv(), all.names = TRUE), envir = globalenv())
     try(grDevices::graphics.off(), silent = TRUE)

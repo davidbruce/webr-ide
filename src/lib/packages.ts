@@ -8,15 +8,25 @@
 //
 // Archives are keyed by R version because webR binaries are built per R
 // minor release; after a webR upgrade to a new R, the old ones are ignored
-// and can be cleared. On start, every cached package for the running R
-// version is mounted from a blob: URL before the console becomes usable.
+// and can be cleared.
+//
+// In the index, "<pkg>" is the latest cached version; "<pkg>@<version>" keeps
+// an older version that a workspace with its own library still uses.
+//
+// On start every cached package is mounted under PKG_CACHE (not searched by
+// R), and the library PKG_LIB gets links to the ones the workspace uses: all
+// of them for a shared library, or the listed versions for a workspace's own
+// library (see workspace-config.ts). Installing a package that is already
+// cached just adds a link, without downloading.
 
 import { createStore } from 'solid-js/store';
 import { setBoot, bootProgress } from './boot';
 import * as fs from './opfs';
 import { RSession, rString } from './r-session';
+import { readLibrary, referencedVersions, writeLibrary, wsConfig, type WorkspaceLibrary } from './workspace-config';
 
 export const PKG_LIB = '/webr-ide/library';
+export const PKG_CACHE = '/webr-ide/cache';
 const INDEX = 'packages/index.json';
 
 export interface CachedPackage {
@@ -44,6 +54,8 @@ const [pkgCache, setPkgCache] = createStore({
   updates: {} as Record<string, PackageUpdate>,
   checkedAt: 0,
   pendingRestart: [] as string[], // updated/removed while loaded
+  /** What the library links to in this session: package → version. */
+  linked: {} as Record<string, string>,
 });
 export { pkgCache };
 
@@ -76,7 +88,8 @@ function publish(index: Index) {
     if (ver === rv) continue;
     for (const p of Object.values(pkgs)) other += p.size;
   }
-  setPkgCache({ entries: { ...(index[rv] ?? {}) }, otherVersionsBytes: other });
+  const latest = Object.fromEntries(Object.entries(index[rv] ?? {}).filter(([k]) => !k.includes('@')));
+  setPkgCache({ entries: latest, otherVersionsBytes: other });
 }
 
 /**
@@ -124,47 +137,128 @@ export function rMinor(versionR: string): string {
 
 export const cachedBytes = () => Object.values(pkgCache.entries).reduce((n, p) => n + p.size, 0);
 
+/** Which packages (name → version) a library uses, given the cache index. */
+function wanted(lib: WorkspaceLibrary, pkgs: Record<string, CachedPackage>): Record<string, string> {
+  if (lib.mode === 'workspace') return { ...lib.packages };
+  return Object.fromEntries(Object.entries(pkgs).filter(([k]) => !k.includes('@')).map(([k, e]) => [k, e.version]));
+}
+
+const cacheDir = (name: string, version: string) => `${name}_${version}`;
+const mountedDirs = new Set<string>();
+
+/** Mount a cached archive under PKG_CACHE (once per session). */
+async function mountCached(session: RSession, e: CachedPackage) {
+  const dir = cacheDir(e.name, e.version);
+  if (mountedDirs.has(dir)) return;
+  const { data, metadata } = await readVfsImage(await fs.readAppFile(e.file));
+  const mountpoint = `${PKG_CACHE}/${dir}`;
+  await session.evalVoid(`.ide_mkdirs(${rString(mountpoint)})`);
+  await session.webR.FS.mount('WORKERFS', { packages: [{ blob: new Blob([data]), metadata }] } as any, mountpoint);
+  mountedDirs.add(dir);
+}
+
+const entryFor = (pkgs: Record<string, CachedPackage>, name: string, version: string) =>
+  pkgs[name]?.version === version ? pkgs[name] : pkgs[`${name}@${version}`];
+
 /**
  * Called while R starts, before the console is handed to the user: set up the
- * user library + install hooks, then mount every cached package.
+ * library + install hooks, mount every cached package and link the ones the
+ * workspace `ws` uses.
  */
-export async function setupPackages(session: RSession): Promise<{ mounted: number; failed: string[] }> {
+export async function setupPackages(session: RSession, ws: string): Promise<{ mounted: number; failed: string[]; missing: string[] }> {
   const rv = rMinor(session.versionR);
-  setPkgCache({ rVersion: rv, pendingRestart: [] });
-  await session.evalVoid(`.ide_pkg_setup(${rString(PKG_LIB)})`);
+  mountedDirs.clear();
+  setPkgCache({ rVersion: rv, pendingRestart: [], linked: {} });
+  await session.evalVoid(`.ide_pkg_setup(${rString(PKG_LIB)}, ${rString(PKG_CACHE)})`);
 
-  const entries = await withIndex((index) => Object.values(index[rv] ?? {}), false);
-  if (!entries.length) return { mounted: 0, failed: [] };
+  const pkgs = await withIndex((index) => ({ ...(index[rv] ?? {}) }), false);
+  const want = wanted(await readLibrary(ws), pkgs);
+  // The latest version of everything (so installs can link instead of
+  // downloading), plus older versions this workspace uses.
+  const toMount = new Map<string, CachedPackage>();
+  for (const [k, e] of Object.entries(pkgs)) if (!k.includes('@')) toMount.set(k, e);
+  for (const [n, v] of Object.entries(want)) {
+    const e = entryFor(pkgs, n, v);
+    if (e) toMount.set(`${n}@${v}`, e);
+  }
+  if (!toMount.size) return { mounted: 0, failed: [], missing: Object.keys(want) };
 
-  const mounted: string[] = [];
-  const missing: string[] = [];
-  setBoot({ label: 'Restoring your packages', done: 0, total: entries.length });
-  for (const e of entries) {
-    bootProgress(mounted.length + missing.length, entries.length);
+  const bad: string[] = [];
+  setBoot({ label: 'Restoring your packages', done: 0, total: toMount.size });
+  let done = 0;
+  for (const [key, e] of toMount) {
+    bootProgress(done++, toMount.size);
     try {
-      const { data, metadata } = await readVfsImage(await fs.readAppFile(e.file));
-      const mountpoint = `${PKG_LIB}/${e.name}`;
-      await session.evalVoid(`.ide_mkdirs(${rString(mountpoint)})`);
-      await session.webR.FS.mount('WORKERFS', { packages: [{ blob: new Blob([data]), metadata }] } as any, mountpoint);
-      mounted.push(e.name);
+      await mountCached(session, e);
     } catch (err) {
-      console.warn(`could not mount cached ${e.name}`, err);
-      missing.push(e.name);
+      console.warn(`could not mount cached ${key}`, err);
+      bad.push(key);
     }
   }
-  const failed = mounted.length ? await session.strings(`.ide_pkg_verify(c(${mounted.map(rString).join(',')}))`) : [];
+  const linkable = Object.entries(want).filter(([n, v]) => mountedDirs.has(cacheDir(n, v)));
+  const missing = Object.keys(want).filter((n) => !linkable.some(([m]) => m === n));
+  await linkPackages(session, linkable);
+  const failed = linkable.length ? await session.strings(`.ide_pkg_verify(c(${linkable.map(([n]) => rString(n)).join(',')}))`) : [];
+  for (const n of failed) setPkgCache('linked', n, undefined!);
   // Drop index entries whose archive is gone or won't mount; they'll be re-cached on reinstall.
-  const bad = [...missing, ...failed];
-  if (bad.length) {
+  const drop = [...bad, ...failed.map((n) => (pkgs[n]?.version === want[n] ? n : `${n}@${want[n]}`))];
+  if (drop.length) {
     await withIndex(async (index) => {
-      for (const n of bad) {
-        const e = index[rv]?.[n];
+      for (const k of drop) {
+        const e = index[rv]?.[k];
         if (e) await fs.removeAppPath(e.file);
-        delete index[rv]?.[n];
+        delete index[rv]?.[k];
       }
     });
   }
-  return { mounted: mounted.length - failed.length, failed: bad };
+  return { mounted: linkable.length - failed.length, failed: drop.map((k) => k.split('@')[0]), missing };
+}
+
+async function linkPackages(session: RSession, list: [string, string][]) {
+  if (!list.length) return;
+  await session.evalVoid(`.ide_pkg_link(c(${list.map(([n]) => rString(n)).join(',')}), c(${list.map(([n, v]) => rString(cacheDir(n, v))).join(',')}))`);
+  for (const [n, v] of list) setPkgCache('linked', n, v);
+}
+
+/**
+ * Make the running session's library match `lib`, without restarting R if
+ * possible. Returns false when a package that has to go (or change version)
+ * is loaded, so R must restart for the change.
+ */
+export async function applyLibrary(session: RSession, lib: WorkspaceLibrary): Promise<boolean> {
+  const rv = pkgCache.rVersion;
+  const pkgs = await withIndex((index) => ({ ...(index[rv] ?? {}) }), false);
+  const want = wanted(lib, pkgs);
+  const have = { ...pkgCache.linked };
+  const remove = Object.keys(have).filter((n) => want[n] !== have[n]);
+  if ((await loadedAmong(session, remove)).length) return false;
+  for (const n of remove) {
+    await session.strings(`as.character(.ide_pkg_drop(${rString(n)}))`);
+    setPkgCache('linked', n, undefined!);
+  }
+  const add: [string, string][] = [];
+  for (const [n, v] of Object.entries(want)) {
+    if (have[n] === v) continue;
+    const e = entryFor(pkgs, n, v);
+    if (!e) continue;
+    try {
+      await mountCached(session, e);
+      add.push([n, v]);
+    } catch (err) {
+      console.warn(`could not mount ${n} ${v}`, err);
+    }
+  }
+  await linkPackages(session, add);
+  return true;
+}
+
+/** True if switching to `ws` needs an R restart (its library differs from what's loaded). */
+export async function libraryNeedsRestart(session: RSession, lib: WorkspaceLibrary): Promise<boolean> {
+  const rv = pkgCache.rVersion;
+  const pkgs = await withIndex((index) => ({ ...(index[rv] ?? {}) }), false);
+  const want = wanted(lib, pkgs);
+  const changed = Object.keys(pkgCache.linked).filter((n) => want[n] !== pkgCache.linked[n]);
+  return (await loadedAmong(session, changed)).length > 0;
 }
 
 /**
@@ -176,9 +270,14 @@ export async function captureInstalls(session: RSession): Promise<CachedPackage[
   if (!log.length) return [];
   const rv = pkgCache.rVersion || rMinor(session.versionR);
   const added: CachedPackage[] = [];
+  const installed: [string, string][] = [];
+  let refs: Set<string> | null = null;
   for (let i = 0; i + 2 < log.length; i += 3) {
     const [name, version, url] = [log[i], log[i + 1], log[i + 2]];
-    if (pkgCache.entries[name]?.version === version) continue;
+    installed.push([name, version]);
+    setPkgCache('linked', name, version);
+    // No URL: linked from the cache, nothing to download.
+    if (!url || pkgCache.entries[name]?.version === version) continue;
     try {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -186,16 +285,31 @@ export async function captureInstalls(session: RSession): Promise<CachedPackage[
       const file = `packages/${rv}/${name}_${version}.tgz`;
       await fs.writeAppFile(file, data);
       const entry: CachedPackage = { name, version, rVersion: rv, file, url, size: data.length, cachedAt: Date.now() };
+      refs ??= await referencedVersions();
+      const used = refs;
       await withIndex(async (index) => {
-        const prev = index[rv]?.[name];
-        if (prev && prev.file !== file) await fs.removeAppPath(prev.file); // superseded version
-        (index[rv] ??= {})[name] = entry;
+        const pkgs = (index[rv] ??= {});
+        const prev = pkgs[name];
+        if (prev && prev.file !== file) {
+          // Superseded: keep it if a workspace's own library still uses it.
+          if (used.has(`${name}@${prev.version}`)) pkgs[`${name}@${prev.version}`] = prev;
+          else await fs.removeAppPath(prev.file);
+        }
+        delete pkgs[`${name}@${version}`];
+        pkgs[name] = entry;
       });
       setPkgCache('updates', name, undefined!);
       added.push(entry);
     } catch (e) {
       console.warn(`could not cache ${name} ${version}:`, e);
     }
+  }
+  // A workspace with its own library records what it installs.
+  const lib = wsConfig.library;
+  if (lib.mode === 'workspace' && installed.some(([n, v]) => lib.packages[n] !== v)) {
+    const packages = { ...lib.packages };
+    for (const [n, v] of installed) packages[n] = v;
+    await writeLibrary(wsConfig.workspace, { mode: 'workspace', packages });
   }
   return added;
 }
@@ -223,22 +337,35 @@ export async function loadedAmong(session: RSession, names: string[]): Promise<s
 }
 
 /**
- * Remove packages from the cache, and from the running session if they
- * aren't loaded. Returns the names that stay active until R restarts.
+ * Remove packages: from this workspace's own library (the archives stay in
+ * the shared cache), or with a shared library, from the cache (kept if a
+ * workspace's own library still uses that version). Returns the names that
+ * stay active until R restarts.
  */
 export async function removeCached(session: RSession, names: string[]): Promise<string[]> {
   const rv = pkgCache.rVersion;
-  await withIndex(async (index) => {
-    for (const n of names) {
-      const e = index[rv]?.[n];
-      if (e) await fs.removeAppPath(e.file);
-      delete index[rv]?.[n];
-    }
-  });
+  const lib = wsConfig.library;
+  if (lib.mode === 'workspace') {
+    const packages = { ...lib.packages };
+    for (const n of names) delete packages[n];
+    await writeLibrary(wsConfig.workspace, { mode: 'workspace', packages });
+  } else {
+    const used = await referencedVersions();
+    await withIndex(async (index) => {
+      for (const n of names) {
+        const e = index[rv]?.[n];
+        if (!e) continue;
+        if (used.has(`${n}@${e.version}`)) index[rv][`${n}@${e.version}`] = e;
+        else await fs.removeAppPath(e.file);
+        delete index[rv]?.[n];
+      }
+    });
+  }
   const stillLoaded: string[] = [];
   for (const n of names) {
     const dropped = session.status === 'ready' ? await session.strings(`as.character(.ide_pkg_drop(${rString(n)}))`) : ['TRUE'];
     if (dropped[0] !== 'TRUE') stillLoaded.push(n);
+    else setPkgCache('linked', n, undefined!);
   }
   if (stillLoaded.length) setPkgCache('pendingRestart', (p) => [...new Set([...p, ...stillLoaded])]);
   return stillLoaded;

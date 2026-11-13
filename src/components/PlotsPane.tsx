@@ -1,7 +1,9 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { state, setState, session, refreshPackages, writeWorkspaceFile, downloadBlob, setPlotSizeHint, restartR, PackageEntry } from '../lib/ide';
+import { state, setState, session, refreshPackages, writeWorkspaceFile, downloadBlob, setPlotSizeHint, restartR, PackageEntry, checkRenv, writeRenvLock } from '../lib/ide';
 import { pkgCache, checkUpdates, clearOtherRVersions, cachedBytes } from '../lib/packages';
+import { wsConfig } from '../lib/workspace-config';
+import { openSettings } from '../lib/settings';
 import { installPackages, updatePackages, removePackage, openPackageBrowser } from '../lib/pkg-actions';
 import { rString } from '../lib/r-session';
 import { askText, formatBytes, toast } from '../lib/ui';
@@ -450,6 +452,24 @@ function PackagesView() {
           </table>
         </Show>
         <div class="pane-footnote">
+          <Show when={state.tree.some((n) => n.path === 'renv.lock')}>
+            This workspace has an renv.lock ·{' '}
+            <button class="link" onClick={() => void checkRenv()}>
+              Check compatibility
+            </button>
+            {' · '}
+            <button class="link" onClick={() => void writeRenvLock()}>
+              Update from this workspace
+            </button>
+            <br />
+          </Show>
+          <Show when={wsConfig.library.mode === 'workspace'}>
+            This workspace has its own library ({Object.keys(wsConfig.library.packages).length} packages) ·{' '}
+            <button class="link" onClick={openSettings}>
+              Change
+            </button>
+            <br />
+          </Show>
           {Object.keys(pkgCache.entries).length} package{Object.keys(pkgCache.entries).length === 1 ? '' : 's'} saved offline ·{' '}
           {formatBytes(cachedBytes())} · R {pkgCache.rVersion || '…'}
           <Show when={pkgCache.otherVersionsBytes > 0}>

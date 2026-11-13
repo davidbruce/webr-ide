@@ -4,8 +4,11 @@ import * as fs from './opfs';
 import { invalidateText } from './text-cache';
 import { setBoot } from './boot';
 import { RSession, HOME, rString } from './r-session';
-import { toast } from './ui';
-import { setupPackages, captureInstalls } from './packages';
+import { choiceDialog, toast } from './ui';
+import { setupPackages, captureInstalls, applyLibrary, libraryNeedsRestart } from './packages';
+import { loadWorkspaceConfig, wsConfig, writeLibrary, setWorkspaceSetting, onLibraryWritten, type WorkspaceLibrary } from './workspace-config';
+import { checkLockfile, hashText, setRenvCheck, buildLockfile, versionChanges, compareVersions } from './renv';
+import { loadRepoIndex } from './pkg-index';
 import { driveServiceWorker, setDriveScope, mountDrive, unmountDrive, selfTestDrive, driveWrite, onDriveChange } from './drive/client';
 
 // ---------------------------------------------------------------- types
@@ -281,9 +284,11 @@ async function cacheNewPackages() {
 }
 
 async function initPackages() {
-  const { mounted, failed } = await setupPackages(session);
+  const { mounted, failed, missing } = await setupPackages(session, state.workspace);
   if (mounted) console.info(`mounted ${mounted} cached packages`);
   if (failed.length) toast(`Couldn't restore cached packages: ${failed.join(', ')} — reinstall them`, 'warn', 7000);
+  if (missing.length && wsConfig.library.mode === 'workspace')
+    toast(`This workspace's library lists ${missing.join(', ')}, which aren't saved in this browser — install them to use them`, 'warn', 9000);
 }
 
 // Keep <workspace>/.RData in step with the global environment so a reload
@@ -725,6 +730,7 @@ export async function openWorkspaceUI(ws: string) {
   });
   localStorage.setItem(LS_LAST_WS, ws);
   document.title = `${ws} — webR IDE`;
+  await loadWorkspaceConfig(ws);
   await refreshTree();
   setState('history', await loadHistory(ws));
   const ide = await loadIdeState(ws);
@@ -737,13 +743,131 @@ export async function attachWorkspaceToR(restoreImage: boolean) {
   try {
     const restored = await loadWorkspaceIntoR(restoreImage);
     if (restored === 'restored') toast('Restored environment from .RData');
+    runRprofile();
     await refreshEnv();
     savedEnvSig = envSignature();
+    void checkRenv({ auto: true });
   } catch (e) {
     toast(`Failed to load workspace into R: ${e}`, 'error');
   } finally {
     setState('attaching', false);
   }
+}
+
+/**
+ * Run the workspace's .Rprofile (and .First(), if it defines one), as R does
+ * at start-up. Runs in the console without an echo, so its output and errors
+ * show there. Unlike R, this happens after .RData is restored.
+ */
+function runRprofile() {
+  if (wsConfig.settings.runRprofile === false) return;
+  if (!state.tree.some((n) => n.kind === 'file' && n.path === '.Rprofile')) return;
+  session.submit('.ide_run_rprofile()', { quiet: true });
+}
+
+/**
+ * Check the workspace's renv.lock against what webR can install and show the
+ * result. `auto`: only if this version of the lockfile hasn't been checked.
+ */
+export async function checkRenv(opts: { auto?: boolean } = {}) {
+  const ws = state.workspace;
+  if (!state.tree.some((n) => n.kind === 'file' && n.path === 'renv.lock')) {
+    if (!opts.auto) toast('This workspace has no renv.lock', 'warn');
+    return;
+  }
+  let text: string;
+  try {
+    text = await fs.readText(ws, 'renv.lock');
+  } catch {
+    return;
+  }
+  if (opts.auto && wsConfig.settings.renvChecked === (await hashText(text))) return;
+  const builtin = new Map<string, string>();
+  if (session.status === 'ready' && (await session.waitIdle(5000))) {
+    const flat = await session.strings('.ide_builtin_pkgs()').catch(() => [] as string[]);
+    for (let i = 0; i + 1 < flat.length; i += 2) builtin.set(flat[i], flat[i + 1]);
+  }
+  const rv = session.versionR ? session.versionR.split('.').slice(0, 2).join('.') : '4.6';
+  try {
+    setRenvCheck(await checkLockfile(text, rv, builtin));
+  } catch (e) {
+    toast(`Couldn't read renv.lock: ${e}`, 'error');
+  }
+}
+
+/**
+ * Write renv.lock for desktop R (renv::restore()). Packages: the workspace's
+ * own library, or with the shared library, the packages loaded now.
+ */
+export async function writeRenvLock(opts: { quiet?: boolean } = {}) {
+  const ws = state.workspace;
+  if (!ws) return;
+  let packages: Record<string, string> = {};
+  if (wsConfig.library.mode === 'workspace') packages = { ...wsConfig.library.packages };
+  else if (session.status === 'ready' && (await session.waitIdle(5000))) {
+    const flat = await session.strings('.ide_pkg_snapshot()');
+    for (let i = 0; i + 1 < flat.length; i += 2) packages[flat[i]] = flat[i + 1];
+  }
+  const builtin = new Set<string>();
+  if (session.status === 'ready' && session.idle) {
+    const flat = await session.strings('.ide_builtin_pkgs()').catch(() => [] as string[]);
+    for (let i = 0; i < flat.length; i += 2) builtin.add(flat[i]);
+  }
+  const rVersion = session.versionR || '4.6.0';
+  const index = await loadRepoIndex(rVersion.split('.').slice(0, 2).join('.')).catch(() => null);
+  const existing = await fs.readText(ws, 'renv.lock').catch(() => null);
+  // Pinned versions that would change: ask (once per workspace) before rewriting them.
+  const changes = versionChanges(existing, packages);
+  let keepLocked = false;
+  if (changes.length) {
+    let choice = wsConfig.settings.renvVersions;
+    if (!choice) {
+      const shown = changes.slice(0, 8).map((c) => `• ${c.name}: ${c.locked} → ${c.webr}${compareVersions(c.webr, c.locked) < 0 ? ' (older)' : ''}`);
+      if (changes.length > 8) shown.push(`• …and ${changes.length - 8} more`);
+      const r = await choiceDialog(
+        'renv.lock pins other versions',
+        `This workspace uses different versions than renv.lock pins. webR only has the current build of each package.\n\n${shown.join('\n')}\n\n` +
+          `Use webR's versions: desktop R will get the versions that ran here.\nKeep locked versions: those entries stay as they are; new packages are still added.\n\nYour choice is remembered for this workspace (Settings → This workspace).`,
+        "Use webR's Versions",
+        { label: 'Keep Locked Versions', value: 'keep' },
+      );
+      if (r === null) return;
+      choice = r === 'keep' ? 'keep' : 'update';
+      await setWorkspaceSetting('renvVersions', choice);
+    }
+    keepLocked = choice === 'keep';
+  }
+  const text = buildLockfile(existing, packages, { rVersion, index, builtin, keepLocked });
+  if (text === existing) {
+    if (!opts.quiet) toast('renv.lock is already up to date');
+    return;
+  }
+  await writeWorkspaceFile('renv.lock', text);
+  // Written here, so no need to check it on the next open.
+  await setWorkspaceSetting('renvChecked', await hashText(text));
+  await refreshTree();
+  await editorApi?.reloadIfOpen('renv.lock');
+  if (!opts.quiet) {
+    const n = Object.keys(packages).length;
+    const pinned = keepLocked && changes.length ? ` (${changes.length} kept at locked versions)` : '';
+    toast(
+      wsConfig.library.mode === 'workspace'
+        ? `Wrote renv.lock (${n} packages${pinned}) — run renv::restore() in desktop R`
+        : `Wrote renv.lock with the ${n} packages loaded now${pinned} — run renv::restore() in desktop R`,
+      'info',
+      6000,
+    );
+  }
+}
+
+// Keep renv.lock in step with a workspace's own library, if asked to.
+onLibraryWritten((ws) => {
+  if (ws === state.workspace && wsConfig.settings.renvSync && wsConfig.library.mode === 'workspace') void writeRenvLock({ quiet: true });
+});
+
+/** Mark the lockfile as checked (the dialog was answered). */
+export async function markRenvChecked(hash: string) {
+  await setWorkspaceSetting('renvChecked', hash);
 }
 
 /** Automatic saves skip environments larger than this (manual saves don't). */
@@ -808,8 +932,45 @@ export async function switchWorkspace(ws: string, opts: { saveImage?: boolean } 
     setState('switching', false);
   }
   scheduleIdeStateSave();
-  await attachWorkspaceToR(true);
+  // A different package library: relink, or restart R if loaded packages differ.
+  if (session.status === 'ready' && !(await useLibrary(wsConfig.library))) {
+    await restartSession({ switching: true });
+  } else {
+    await attachWorkspaceToR(true);
+  }
   await refreshWorkspaces();
+}
+
+/** Point the session's library at `lib`; false if R has to restart for it. */
+async function useLibrary(lib: WorkspaceLibrary): Promise<boolean> {
+  if (await libraryNeedsRestart(session, lib)) return false;
+  return applyLibrary(session, lib);
+}
+
+/**
+ * Give the current workspace its own package library (starting with the
+ * packages loaded now), or go back to the shared one.
+ */
+export async function setLibraryMode(mode: WorkspaceLibrary['mode'], start?: Record<string, string>) {
+  const ws = state.workspace;
+  if (!ws || (wsConfig.library.mode === mode && !start)) return;
+  if (session.status === 'ready' && !session.idle) return toast('R is busy — try again when it finishes', 'warn');
+  let packages: Record<string, string> = start ?? {};
+  if (mode === 'workspace' && session.status === 'ready' && !start) {
+    const flat = await session.strings('.ide_pkg_snapshot()');
+    for (let i = 0; i + 1 < flat.length; i += 2) packages[flat[i]] = flat[i + 1];
+  }
+  const lib: WorkspaceLibrary = { mode, packages: mode === 'workspace' ? packages : wsConfig.library.packages };
+  await writeLibrary(ws, lib);
+  if (session.status !== 'ready') return;
+  if (await useLibrary(lib)) {
+    toast(mode === 'workspace' ? `"${ws}" now has its own library (${Object.keys(packages).length} packages)` : `"${ws}" uses the shared library`);
+    await refreshPackages();
+  } else {
+    toast('Restarting R to switch libraries…');
+    await saveEnvironmentImage(true, { auto: true });
+    await restartSession({ switching: true });
+  }
 }
 
 export async function createWorkspace(name: string, template = true) {
@@ -891,11 +1052,23 @@ export async function startR() {
 }
 
 export async function restartR() {
+  await restartSession();
+  toast('R session restarted');
+}
+
+/**
+ * Restart R and reattach the workspace. `switching`: called part-way through
+ * a workspace switch, when R doesn't hold the new workspace's files yet (so
+ * there's nothing to sync back) and its saved environment should be restored.
+ */
+async function restartSession(opts: { switching?: boolean } = {}) {
   setState('env', []);
-  try {
-    await syncFromR();
-  } catch {
-    /* ignore */
+  if (!opts.switching) {
+    try {
+      await syncFromR();
+    } catch {
+      /* ignore */
+    }
   }
   snapshot = new Map();
   driveMounted = null; // the old session's mounts go away with it
@@ -904,8 +1077,7 @@ export async function restartR() {
     await session.restart(plotSize, initPackages);
     await session.setPlotSize(plotSize.width, plotSize.height);
     setBoot({ label: 'Opening your workspace' });
-    await attachWorkspaceToR(false);
-    toast('R session restarted');
+    await attachWorkspaceToR(!!opts.switching);
   } catch (e) {
     toast(`Restart failed: ${e}`, 'error');
   } finally {

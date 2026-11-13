@@ -8,6 +8,7 @@ import { Shortcuts } from './components/Shortcuts';
 import { StartupCard } from './components/StartupCard';
 import { UpdateBanner } from './components/UpdateBanner';
 import { SettingsDialog } from './components/SettingsDialog';
+import { RenvDialog } from './components/RenvDialog';
 import { openSettings } from './lib/settings';
 import { PackageBrowser } from './components/PackageBrowser';
 import { consoleApi } from './components/Console';
@@ -110,6 +111,7 @@ export function App() {
         <StartupCard />
         <UpdateBanner />
         <SettingsDialog />
+        <RenvDialog />
       </div>
     </Show>
   );

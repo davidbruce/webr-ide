@@ -426,7 +426,7 @@ export function ConsolePane() {
           flushNow();
           if (prompt !== null) eraseLine();
           prompt = null;
-          write(`${ev.prompt}${inputColor()}${nl(ev.line)}${RESET}\r\n`);
+          if (!ev.hidden) write(`${ev.prompt}${inputColor()}${nl(ev.line)}${RESET}\r\n`);
           break;
         case 'prompt':
           flushNow();

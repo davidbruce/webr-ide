@@ -8,7 +8,7 @@ import { nb, setOutputMode, stopChunks, anyRunning, runsFor, inlinesFor, setDocP
 import { FileSource } from '../lib/grid/source';
 import { DataGrid } from './DataGrid';
 import { formatBytes } from '../lib/ui';
-import { downloadPath, isInstalling, phone, rRoot, showPane, withoutPaneSwitch } from '../lib/ide';
+import { downloadPath, isInstalling, phone, rRoot, showPane, withoutPaneSwitch, checkRenv, writeRenvLock } from '../lib/ide';
 import * as fs from '../lib/opfs';
 import {
   registerEditor,
@@ -31,6 +31,10 @@ import { openShortcuts } from './Shortcuts';
 import { openFindInFiles } from './SearchPanel';
 import { desktopEditing } from '../lib/input-mode';
 import { settings, openSettings } from '../lib/settings';
+import { wsConfig } from '../lib/workspace-config';
+
+/** Tab width: the workspace's own, else the user's. */
+const tabSize = () => wsConfig.settings.tabSize ?? settings.tabSize;
 
 interface Tab {
   key: string;
@@ -69,7 +73,7 @@ export function EditorPane() {
     const key = `t${++keySeq}`;
     const language = languageFor(name);
     const model = monaco.editor.createModel(content, language, monaco.Uri.parse(`inmemory://webr-ide/${key}/${encodeURIComponent(name)}`));
-    model.updateOptions({ tabSize: settings.tabSize, indentSize: settings.tabSize, insertSpaces: true });
+    model.updateOptions({ tabSize: tabSize(), indentSize: tabSize(), insertSpaces: true });
     models.set(key, model);
     savedVersion.set(key, model.getAlternativeVersionId());
     model.onDidChangeContent(() => {
@@ -771,6 +775,8 @@ export function EditorPane() {
     action('r.shortcuts', 'Keyboard Shortcuts', [K.Alt | K.Shift | C.KeyK], openShortcuts);
     action('r.focusConsole', 'Move Focus to Console', [], () => consoleApi?.focus());
     action('r.settings', 'Settings…', [K.CtrlCmd | C.Comma], openSettings);
+    action('r.renv', 'Check renv.lock Compatibility', [], () => void checkRenv());
+    action('r.renvWrite', 'Write renv.lock (for renv::restore() on desktop)', [], () => void writeRenvLock());
     action('r.palette', 'Command Palette', [K.CtrlCmd | K.Shift | C.KeyP], palette);
     // F1 is R help here (as in RStudio); the palette is ⌘⇧P.
     monaco.editor.addKeybindingRule({ keybinding: C.F1, command: '-editor.action.quickCommand' });
@@ -866,8 +872,8 @@ export function EditorPane() {
       });
     });
     createEffect(() => {
-      const tabSize = settings.tabSize;
-      for (const m of models.values()) m.updateOptions({ tabSize, indentSize: tabSize, insertSpaces: true });
+      const size = tabSize();
+      for (const m of models.values()) m.updateOptions({ tabSize: size, indentSize: size, insertSpaces: true });
     });
     // Lock the editor while a package downloads/installs.
     createEffect(() => ed.updateOptions({ readOnly: isInstalling(), readOnlyMessage: { value: 'Editing is paused while a package installs.' } }));

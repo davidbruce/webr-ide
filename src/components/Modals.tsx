@@ -35,7 +35,7 @@ function DialogBox(props: { req: DialogRequest }) {
   onCleanup(() => window.removeEventListener('keydown', onKey, true));
 
   return (
-    <div class="modal-backdrop dialog-backdrop" onClick={(e) => e.target === e.currentTarget && close(null)}>
+    <div class="modal-backdrop dialog-backdrop prompt-backdrop" onClick={(e) => e.target === e.currentTarget && close(null)}>
       <form
         class="dialog"
         role="dialog"

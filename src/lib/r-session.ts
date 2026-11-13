@@ -8,7 +8,7 @@ import { WEBR_BASE_URL, mountBaseLibrary } from './webr-runtime';
 export type SessionEvent =
   | { type: 'stdout'; text: string }
   | { type: 'stderr'; text: string }
-  | { type: 'echo'; prompt: string; line: string }
+  | { type: 'echo'; prompt: string; line: string; /** Run without showing the input. */ hidden?: boolean }
   | { type: 'prompt'; prompt: string }
   | { type: 'busy'; busy: boolean }
   | { type: 'idle' }
@@ -37,6 +37,8 @@ export const HOME = '/home/web_user';
  *  - output/plot/pager events forwarded to listeners
  *  - an "idle" event when R returns to a top-level prompt with nothing queued
  */
+const QUIET = '\u0001quiet\u0001';
+
 export class RSession {
   webR!: WebR;
   status: SessionStatus = 'starting';
@@ -219,21 +221,29 @@ export class RSession {
     // Blank lines at a top-level prompt do nothing in R; skip them so running
     // a whole script doesn't fill the console with empty prompts.
     while (this.currentPrompt === '> ' && this.queue.length > 1 && this.queue[0].trim() === '') this.queue.shift();
-    const line = this.queue.shift()!;
+    let line = this.queue.shift()!;
+    // Quiet lines (start-up code such as .Rprofile) run without an echo.
+    const quiet = line.startsWith(QUIET);
+    if (quiet) line = line.slice(QUIET.length);
     this.atPrompt = false;
     this.emit({ type: 'busy', busy: true });
-    this.emit({ type: 'echo', prompt: this.currentPrompt, line });
+    // Quiet: the console just clears its prompt line.
+    this.emit({ type: 'echo', prompt: this.currentPrompt, line, hidden: quiet });
     this.webR.writeConsole(line);
   }
 
-  /** Queue one or more lines of R input, as if typed at the console. */
-  submit(code: string) {
+  /**
+   * Queue one or more lines of R input, as if typed at the console.
+   * `quiet`: no echo and no history (code the IDE runs itself); its output
+   * and errors still show in the console.
+   */
+  submit(code: string, opts: { quiet?: boolean } = {}) {
     if (this.status !== 'ready') return;
     const lines = code.replace(/\r\n?/g, '\n').split('\n');
     // Drop a single trailing empty line caused by a final newline.
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-    this.queue.push(...lines);
-    this.emit({ type: 'submitted', line: code });
+    this.queue.push(...(opts.quiet ? lines.map((l) => QUIET + l) : lines));
+    if (!opts.quiet) this.emit({ type: 'submitted', line: code });
     if (this.atPrompt) this.sendNext();
   }
 

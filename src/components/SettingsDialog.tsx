@@ -4,6 +4,8 @@ import { Portal } from 'solid-js/web';
 import { settings, setSetting, resetSettings, settingsOpen, setSettingsOpen, type Settings } from '../lib/settings';
 import { setThemePref, themePref, type ThemePref } from '../lib/ui';
 import { rKeyboardEnabled, setRKeyboardEnabled } from '../lib/rkeyboard';
+import { wsConfig, setWorkspaceSetting } from '../lib/workspace-config';
+import { setLibraryMode, writeRenvLock } from '../lib/ide';
 
 const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
@@ -112,6 +114,77 @@ export function SettingsDialog() {
               </Row>
               <Row label="Problems" hint="Warn about unknown functions, wrong arguments and unused variables (R's codetools).">
                 <OnOff label="Problems" on={settings.lint} set={flag('lint')} />
+              </Row>
+
+              <h4>This workspace ({wsConfig.workspace})</h4>
+              <Row label="Tab width" hint="Stored with the workspace, so it travels with a zip export.">
+                <Segmented
+                  label="Workspace tab width"
+                  value={wsConfig.settings.tabSize ?? 0}
+                  options={[
+                    [0, `Default (${settings.tabSize})`],
+                    [2, '2'],
+                    [4, '4'],
+                  ]}
+                  set={(v) => void setWorkspaceSetting('tabSize', v ? (v as 2 | 4) : undefined)}
+                />
+              </Row>
+              <Row label="Run .Rprofile on open" hint="Sources the workspace's .Rprofile (and calls .First()) when it opens or R restarts.">
+                <OnOff label="Run .Rprofile on open" on={wsConfig.settings.runRprofile !== false} set={(v) => void setWorkspaceSetting('runRprofile', v ? undefined : false)} />
+              </Row>
+              <Row
+                label="Package library"
+                hint={
+                  wsConfig.library.mode === 'workspace'
+                    ? `Its own: ${Object.keys(wsConfig.library.packages).length} packages, at fixed versions. Packages are still stored once and shared.`
+                    : 'Shared: every package you have installed. "Own" keeps just the packages this workspace uses, at the versions it uses (like renv).'
+                }
+              >
+                <Segmented
+                  label="Package library"
+                  value={wsConfig.library.mode}
+                  options={[
+                    ['shared', 'Shared'],
+                    ['workspace', 'Own'],
+                  ]}
+                  set={(v) => void setLibraryMode(v as 'shared' | 'workspace')}
+                />
+              </Row>
+              <Row
+                label="renv.lock"
+                hint={
+                  wsConfig.library.mode === 'workspace'
+                    ? 'For renv::restore() in desktop R. Keep it updated as packages change, or write it now.'
+                    : 'For renv::restore() in desktop R, from the packages loaded now. With its own library, it can also stay updated.'
+                }
+              >
+                <div class="settings-inline">
+                  <Show when={wsConfig.library.mode === 'workspace'}>
+                    <OnOff
+                      label="Keep renv.lock up to date"
+                      on={!!wsConfig.settings.renvSync}
+                      set={(v) => {
+                        void setWorkspaceSetting('renvSync', v || undefined);
+                        if (v) void writeRenvLock();
+                      }}
+                    />
+                  </Show>
+                  <button class="btn small" onClick={() => void writeRenvLock()}>
+                    Write now
+                  </button>
+                </div>
+              </Row>
+              <Row label="When versions differ from renv.lock" hint="webR has only the current build of each package. Update the pinned versions to webR's, or keep the pins.">
+                <Segmented
+                  label="renv.lock versions"
+                  value={wsConfig.settings.renvVersions ?? 'ask'}
+                  options={[
+                    ['ask', 'Ask'],
+                    ['update', 'Update'],
+                    ['keep', 'Keep'],
+                  ]}
+                  set={(v) => void setWorkspaceSetting('renvVersions', v === 'ask' ? undefined : (v as 'update' | 'keep'))}
+                />
               </Row>
 
               <Show when={touchScreen}>
