@@ -7,6 +7,7 @@ import { markRenvChecked, session, setLibraryMode } from '../lib/ide';
 import { installPackages } from '../lib/pkg-actions';
 import { pkgCache } from '../lib/packages';
 import { toast } from '../lib/ui';
+import './RenvDialog.css';
 
 const LABEL: Record<RowStatus, string> = {
   missing: 'Not available for webR',

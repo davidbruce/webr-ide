@@ -14,8 +14,13 @@ local({
 
   e$.ide_fun <- function(name) {
     tryCatch({
-      if (grepl("::", name, fixed = TRUE)) f <- eval(str2lang(name), globalenv())
-      else f <- get(name, envir = globalenv(), mode = "function")
+      if (grepl("::", name, fixed = TRUE)) {
+        # pkg::fn without loading pkg: a hover mustn't load a package (slow,
+        # and it would change what the session has loaded).
+        parts <- strsplit(name, ":::?")[[1]]
+        if (length(parts) != 2L || !isNamespaceLoaded(parts[1])) return(NULL)
+        f <- get(parts[2], envir = asNamespace(parts[1]), mode = "function")
+      } else f <- get(name, envir = globalenv(), mode = "function")
       if (is.function(f)) f else NULL
     }, error = function(err) NULL)
   }

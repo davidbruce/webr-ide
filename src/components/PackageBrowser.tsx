@@ -17,6 +17,7 @@ import {
 import { browser, setBrowser, installPackages, updatePackages, removePackage, installing } from '../lib/pkg-actions';
 import { formatBytes, toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './PackageBrowser.css';
 
 type Tab = 'browse' | 'installed' | 'updates';
 

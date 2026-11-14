@@ -19,6 +19,7 @@ import { askText, confirmDialog, formatBytes, setImageView, toast } from '../lib
 import { extOf, IMAGE_EXT, isBinaryName, isTabularName } from '../lib/monaco';
 import { Icon } from './Icon';
 import { SearchPanel, sidebarMode, setSidebarMode } from './SearchPanel';
+import './Sidebar.css';
 
 interface MenuState {
   node: fs.FileNode;

@@ -16,6 +16,8 @@ export interface Settings {
   syntaxCheck: boolean;
   /** Warn about misspelled functions, wrong arguments and unused variables. */
   lint: boolean;
+  /** The script editor: Monaco, or CodeMirror 6 (experimental). Applied on reload. */
+  editorEngine: 'monaco' | 'codemirror';
 }
 
 const coarse = window.matchMedia('(pointer: coarse)').matches;
@@ -27,6 +29,7 @@ export const DEFAULTS: Settings = {
   hoverHelp: true,
   syntaxCheck: true,
   lint: true,
+  editorEngine: 'monaco',
 };
 
 const LS_KEY = 'webr-ide:settings';

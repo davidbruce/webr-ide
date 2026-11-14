@@ -1,6 +1,8 @@
 // Install / update / remove actions shared by the Packages tab and the package browser.
 import { createSignal } from 'solid-js';
-import { session, restartR, refreshPackages } from './ide';
+import { session } from './ide-state';
+import { refreshPackages } from './env-refresh';
+import { restartR } from './workspaces';
 import { loadedAmong, removeCached } from './packages';
 import { rString } from './r-session';
 import { confirmDialog, toast } from './ui';

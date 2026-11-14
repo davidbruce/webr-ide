@@ -1,0 +1,51 @@
+/* ---------------------------------------------------------------- outline */
+.outline-menu {
+  width: min(300px, calc(100vw - 16px));
+}
+.outline-menu .menu-scroll {
+  max-height: min(60vh, 520px);
+}
+.outline-item {
+  gap: 7px;
+  min-height: 30px;
+}
+.outline-kind {
+  flex: none;
+  min-width: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.outline-item.function .outline-kind {
+  color: var(--accent);
+  font-style: italic;
+}
+.outline-item.chunk .outline-kind {
+  color: var(--ok);
+}
+.outline-item.function .outline-name,
+.outline-item.chunk .outline-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.outline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-line {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.outline-menu .menu-item.current {
+  background: var(--bg-select);
+}
+.outline-empty {
+  padding: 8px 10px 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: normal;
+}

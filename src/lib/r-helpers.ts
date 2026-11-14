@@ -61,14 +61,28 @@ local({
     utils::capture.output(utils::str(x, give.attr = FALSE, vec.len = 3, list.len = 200))
   }
 
-  e$.ide_snapshot <- function(root) {
-    f <- list.files(root, recursive = TRUE, all.files = TRUE, include.dirs = TRUE, no.. = TRUE)
+  # (path, kind, signature) triples for workspace-relative paths; .ide/ is the IDE's own.
+  e$.ide_sig <- function(root, f) {
     f <- f[!(f == ".ide" | startsWith(f, ".ide/"))]
+    f <- f[file.exists(file.path(root, f))]
     if (!length(f)) return(character(0))
     i <- file.info(file.path(root, f), extra_cols = FALSE)
     kind <- ifelse(i$isdir, "d", "f")
     sig <- ifelse(i$isdir, "", paste(format(as.numeric(i$mtime), digits = 15), i$size))
     c(rbind(f, kind, sig))
+  }
+
+  e$.ide_snapshot <- function(root) {
+    e$.ide_sig(root, list.files(root, recursive = TRUE, all.files = TRUE, include.dirs = TRUE, no.. = TRUE))
+  }
+
+  # Signatures of the paths and everything below them (after the IDE changed R's copy there).
+  e$.ide_snapshot_under <- function(root, paths) {
+    below <- unlist(lapply(paths, function(p) {
+      if (dir.exists(file.path(root, p)))
+        file.path(p, list.files(file.path(root, p), recursive = TRUE, all.files = TRUE, include.dirs = TRUE, no.. = TRUE))
+    }))
+    e$.ide_sig(root, unique(c(paths, below)))
   }
 
   e$.ide_mkdirs <- function(dirs) {

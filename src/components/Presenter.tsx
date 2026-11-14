@@ -8,6 +8,7 @@ import { preview } from '../lib/render';
 import { attachDeck, audienceOpen, closeAudienceWindow, command, deckState, openAudienceWindow, relayBoard, updateAudienceWindow } from '../lib/presenter';
 import { toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './Presenter.css';
 
 const [open, setOpen] = createSignal(false);
 export const presenterOpen = open;

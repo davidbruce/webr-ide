@@ -15,6 +15,7 @@ import { useSystemKeyboard } from '../lib/rkeyboard';
 import { consoleApi } from './Console';
 import { keyBarTarget } from './KeyBar';
 import { Icon } from './Icon';
+import './RKeyboard.css';
 
 type Target = 'editor' | 'console';
 /** Letters, iOS's 123 layer, and its #+= layer. */

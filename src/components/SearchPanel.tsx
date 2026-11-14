@@ -7,6 +7,7 @@ import { isBinaryName, IMAGE_EXT, extOf } from '../lib/monaco';
 import { confirmDialog, toast } from '../lib/ui';
 import { cachedText } from '../lib/text-cache';
 import { Icon } from './Icon';
+import './SearchPanel.css';
 
 /** Which view the sidebar shows. */
 export const [sidebarMode, setSidebarMode] = createSignal<'files' | 'search'>('files');
@@ -104,10 +105,12 @@ export function SearchPanel() {
     } catch {
       setError('Invalid regular expression');
       setResults([]);
+      setSearching(false); // (a search still running stops at its next check)
       return;
     }
     if (!re) {
       setResults([]);
+      setSearching(false);
       return;
     }
     setSearching(true);

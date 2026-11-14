@@ -2,6 +2,7 @@
 import { createSignal, For, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { kbd } from '../lib/ui';
+import './Shortcuts.css';
 
 const [open, setOpen] = createSignal(false);
 export const openShortcuts = () => setOpen(true);

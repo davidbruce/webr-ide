@@ -8,6 +8,7 @@ import { Shortcuts } from './components/Shortcuts';
 import { StartupCard } from './components/StartupCard';
 import { UpdateBanner } from './components/UpdateBanner';
 import { SettingsDialog } from './components/SettingsDialog';
+import { CommandPalette } from './components/CommandPalette';
 import { RenvDialog } from './components/RenvDialog';
 import { openSettings } from './lib/settings';
 import { PackageBrowser } from './components/PackageBrowser';
@@ -80,8 +81,15 @@ export function App() {
     } else if (mod && e.shiftKey && e.key === 'F10') {
       e.preventDefault();
       void restartR();
-    } else if (e.key === 'Escape' && state.zoomed && !document.querySelector('.modal-backdrop, .menu-backdrop')) {
-      setState('zoomed', null);
+    } else if (e.key === 'Escape') {
+      // A menu is open: Esc closes it (the topmost), as clicking outside does.
+      const menus = document.querySelectorAll<HTMLElement>('.menu-backdrop');
+      if (menus.length) {
+        e.preventDefault();
+        menus[menus.length - 1].click();
+      } else if (state.zoomed && !document.querySelector('.modal-backdrop, .palette-backdrop')) {
+        setState('zoomed', null);
+      }
     }
   };
   window.addEventListener('keydown', onKey);
@@ -106,10 +114,12 @@ export function App() {
     });
   }
 
-  window.addEventListener('unhandledrejection', (e) => {
+  const onRejection = (e: PromiseRejectionEvent) => {
     console.error(e.reason);
     toast(String(e.reason?.message ?? e.reason), 'error');
-  });
+  };
+  window.addEventListener('unhandledrejection', onRejection);
+  onCleanup(() => window.removeEventListener('unhandledrejection', onRejection));
 
   return (
     <Show
@@ -134,6 +144,7 @@ export function App() {
         <StartupCard />
         <UpdateBanner />
         <SettingsDialog />
+        <CommandPalette />
         <RenvDialog />
       </div>
     </Show>

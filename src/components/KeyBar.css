@@ -1,0 +1,55 @@
+/* ---------------------------------------------------------------- phone key bar */
+
+/* Same height as the tab bar it replaces, so nothing shifts when it swaps. */
+.keybar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  height: calc(54px + max(4px, env(safe-area-inset-bottom)));
+  padding: 3px 6px max(4px, env(safe-area-inset-bottom));
+  padding-left: max(6px, env(safe-area-inset-left));
+  padding-right: max(6px, env(safe-area-inset-right));
+  border-top: 1px solid var(--border);
+  background: var(--bg-topbar);
+  box-sizing: border-box;
+}
+
+.keybar-key {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  max-height: 46px;
+  align-self: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-pane);
+  color: var(--text);
+  box-shadow: 0 1px 0 var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.keybar-key:active {
+  background: var(--bg-active);
+}
+.keybar-key.run {
+  color: var(--ok);
+}
+
+/* The debugger's row on phones sits above the tab bar / key bar. */
+.keybar.debug-keys {
+  height: 48px;
+  padding-bottom: 3px;
+  background: color-mix(in srgb, var(--paused) 18%, var(--bg-topbar));
+}
+.keybar.debug-keys .keybar-key.run {
+  color: var(--ok);
+}
+.keybar.debug-keys .keybar-key.danger {
+  color: var(--danger);
+}

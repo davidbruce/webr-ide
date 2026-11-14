@@ -1,0 +1,166 @@
+/* ------------------------------------------------------------------ editor */
+.editor-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.editor-tabs::-webkit-scrollbar {
+  display: none;
+}
+.editor-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(100% - 5px);
+  max-width: 220px;
+  padding: 0 4px 0 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+.editor-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-toolbar) 50%, transparent);
+}
+.editor-tab.active {
+  background: var(--bg-toolbar);
+  border-color: var(--border);
+  color: var(--text);
+  height: calc(100% - 4px);
+}
+.editor-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor-tab.dirty .editor-tab-name {
+  font-style: italic;
+}
+.editor-tab-close {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+}
+.editor-tab-close:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.dirty-dot {
+  display: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.editor-tab.dirty .editor-tab-close .dirty-dot {
+  display: block;
+}
+.editor-tab.dirty .editor-tab-close .icon {
+  display: none;
+}
+.editor-tab.dirty .editor-tab-close:hover .dirty-dot {
+  display: none;
+}
+.editor-tab.dirty .editor-tab-close:hover .icon {
+  display: block;
+}
+.editor-tab-new {
+  flex: none;
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+}
+.editor-tab-new:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.editor-body {
+  overflow: hidden;
+}
+.monaco-host {
+  position: absolute;
+  inset: 0;
+}
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 16px;
+}
+.empty-state p {
+  margin: 0;
+}
+.empty-state .hint {
+  font-size: 12px;
+  margin-top: 6px;
+}
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ---------------------------------------------------------------- debugger */
+.monaco-editor .bp-dot,
+.cm-editor .bp-dot {
+  background: var(--breakpoint);
+  border-radius: 50%;
+  width: 10px !important;
+  height: 10px !important;
+  margin: 5px 0 0 5px;
+}
+.monaco-editor .bp-dot.inactive,
+.cm-editor .bp-dot.inactive {
+  background: transparent;
+  border: 2px solid var(--breakpoint);
+  opacity: 0.6;
+}
+.monaco-editor .bp-line-number,
+.cm-editor .bp-line-number {
+  color: var(--breakpoint) !important;
+  font-weight: 700;
+}
+.monaco-editor .bp-line-number.inactive,
+.cm-editor .bp-line-number.inactive {
+  font-weight: 400;
+  text-decoration: line-through;
+}
+.monaco-editor .debug-line,
+.cm-editor .debug-line {
+  background: color-mix(in srgb, var(--paused) 28%, transparent);
+}
+.monaco-editor .debug-arrow::before,
+.cm-editor .debug-arrow::before {
+  content: '▶';
+  display: block;
+  color: var(--paused-strong);
+  font-size: 12px;
+  line-height: inherit;
+  padding-left: 3px;
+}

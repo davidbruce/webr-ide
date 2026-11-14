@@ -10,7 +10,7 @@
 import { batch, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { delegateEvents, DelegatedEvents } from 'solid-js/web';
-import { PaneId, setState, state, editor, onDesktopPane } from './ide';
+import { PaneId, setState, state, editor, onDesktopPane } from './ide-state';
 
 export interface SplitSizes {
   sidebar: number; // px
@@ -60,10 +60,13 @@ function persist() {
   }
 }
 
-export function setSizes(patch: Partial<SplitSizes>) {
+/** `save: false` while a splitter is dragged; saveSizes() when it's let go. */
+export function setSizes(patch: Partial<SplitSizes>, opts: { save?: boolean } = {}) {
   setSizesSignal({ ...sizes(), ...patch });
-  persist();
+  if (opts.save !== false) persist();
 }
+
+export const saveSizes = persist;
 
 /** Not in the main window's grid (minimized, or in its own window). */
 const away = (p: PaneId) => panes.minimized[p] || panes.popped[p];
@@ -71,7 +74,6 @@ export const isMinimized = (p: PaneId) => panes.minimized[p];
 export const isPopped = (p: PaneId) => panes.popped[p];
 /** Both panes of the column are minimized or popped out: the column is a strip. */
 export const columnCollapsed = (col: 'left' | 'right') => COLUMN_PANES[col].every(away);
-export const columnOf = (p: PaneId) => COLUMN[p];
 
 function relayout() {
   queueMicrotask(() => editor()?.layout());
@@ -167,7 +169,7 @@ export function paneShowing(p: PaneId): boolean {
   return !panes.minimized[p];
 }
 
-// Desktop hooks from ide.ts: bring a pane back for code that was run (the
+// Desktop hooks from ide-state.ts: bring a pane back for code that was run (the
 // console) or help that was asked for; mark new output in a hidden pane.
 onDesktopPane({
   reveal(p) {
@@ -180,10 +182,6 @@ onDesktopPane({
     if (!paneShowing(p)) setPanes('badge', p, true);
   },
 });
-
-export function clearBadge(p: PaneId) {
-  if (panes.badge[p]) setPanes('badge', p, false);
-}
 
 // A saved layout with every pane minimized: show the script.
 ensureVisible();

@@ -16,6 +16,7 @@ import {
 } from '../lib/help';
 import { toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './HelpPane.css';
 
 const DROP = 'script, style, link, meta, iframe, object, embed, form, input, button, textarea, select, base';
 

@@ -1,7 +1,7 @@
 // Help pane: R help pages as HTML (see r-help.ts), with back/forward history
 // and links between pages, package indexes, examples and vignettes.
 import { batch, createSignal } from 'solid-js';
-import { session, setState, showPane } from './ide';
+import { session, setState, showPane } from './ide-state';
 import { rString } from './r-session';
 import { toast } from './ui';
 

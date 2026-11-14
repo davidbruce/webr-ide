@@ -19,9 +19,10 @@ import { openStorageInfo } from './StorageInfo';
 import { openShortcuts } from './Shortcuts';
 import { openSettings } from '../lib/settings';
 import { exportWorkspace, pickWorkspaceZip } from '../lib/workspace-zip';
-import { resetLayout } from './Workbench';
+import { resetLayout } from '../lib/layout';
 import { EXAMPLES, EXAMPLE_GROUPS, Example } from '../lib/examples';
 import { openPackageBrowser } from '../lib/pkg-actions';
+import './TopBar.css';
 
 const QUARTO_TEMPLATE = `---
 title: "Untitled"

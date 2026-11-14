@@ -1,0 +1,86 @@
+/* ------------------------------------------------------------------ tokens */
+:root {
+  --app-height: 100dvh;
+  --gutter: 6px;
+  --radius: 5px;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', Menlo, Monaco, 'Cascadia Code', Consolas, monospace;
+  --btn-size: 30px;
+  --header-h: 34px;
+  --toolbar-h: 34px;
+  --topbar-h: 44px;
+
+  --bg-app: #dde3ea;
+  --bg-topbar: #eef1f5;
+  --bg-pane: #ffffff;
+  --bg-header: #e6ebf0;
+  --bg-toolbar: #f6f8fa;
+  --bg-hover: #e3e9f0;
+  --bg-active: #d4dee9;
+  --bg-select: #dbe8f7;
+  --bg-input: #ffffff;
+  --border: #c5cdd6;
+  --border-soft: #e1e6eb;
+  --text: #1f2a35;
+  --text-muted: #6a7682;
+  --text-faint: #98a3ad;
+  --accent: #3a77b4;
+  --accent-strong: #2b5b84;
+  --accent-text: #ffffff;
+  --danger: #c7362f;
+  --ok: #2f9e44;
+  --warn: #d48a12;
+  --r-blue: #2266b8;
+  --folder: #d9a33a;
+  --shadow: 0 10px 30px rgba(20, 30, 45, 0.18), 0 2px 6px rgba(20, 30, 45, 0.1);
+  --scrim: rgba(20, 28, 38, 0.38);
+
+  --term-input: #2563eb;
+  /* debugger: breakpoint dots, the paused line */
+  --breakpoint: #e5484d;
+  --paused: #f5c400;
+  --paused-strong: #d29b00;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --breakpoint: #f16a6e;
+  --paused: #e0b400;
+  --paused-strong: #f0c94a;
+  --bg-app: #121418;
+  --bg-topbar: #1a1d22;
+  --bg-pane: #1d2127;
+  --bg-header: #23282f;
+  --bg-toolbar: #20242a;
+  --bg-hover: #2b313a;
+  --bg-active: #333b46;
+  --bg-select: #263a52;
+  --bg-input: #15181c;
+  --border: #353c46;
+  --border-soft: #2a3038;
+  --text: #dfe5ec;
+  --text-muted: #9aa6b2;
+  --text-faint: #6b7682;
+  --accent: #5b9be0;
+  --accent-strong: #79b0ec;
+  --accent-text: #0d1620;
+  --danger: #f06a62;
+  --ok: #4cc06a;
+  --warn: #e7a93a;
+  --r-blue: #7fb2f0;
+  --folder: #e0b357;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --scrim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+/* Bigger hit targets on touch screens (iPad). */
+@media (pointer: coarse) {
+  :root {
+    --btn-size: 36px;
+    --header-h: 38px;
+    --toolbar-h: 40px;
+    --topbar-h: 48px;
+    --gutter: 8px;
+  }
+}

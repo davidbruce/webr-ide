@@ -84,7 +84,6 @@ export function formatBytes(n: number | undefined): string {
 }
 
 export const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigator.userAgent.includes('Mac');
-export const modKey = isMac ? '⌘' : 'Ctrl+';
 
 const MAC_KEYS: Record<string, string> = { mod: '⌘', shift: '⇧', alt: '⌥', ctrl: '⌃', enter: '↩' };
 const PC_KEYS: Record<string, string> = { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl', enter: 'Enter' };
@@ -97,3 +96,6 @@ export function kbd(spec: string): string {
   const parts = spec.split('+').map((k) => (isMac ? MAC_KEYS : PC_KEYS)[k.toLowerCase()] ?? k);
   return isMac ? parts.join('') : parts.join('+');
 }
+
+/** Set when the app reloads itself on purpose (no "unsaved changes" prompt). */
+export const reloading = { now: false };

@@ -3,7 +3,8 @@
 // Most of it asks the running R session; all of it waits while R is busy.
 import { createEffect, createRoot, on } from 'solid-js';
 import { monaco, inRChunk } from './monaco';
-import { session, state, completions } from './ide';
+import { session, state } from './ide-state';
+import { completions } from './env-refresh';
 import { rString } from './r-session';
 import * as fs from './opfs';
 import { cachedText } from './text-cache';
@@ -401,22 +402,44 @@ const g = globalThis as { __rLanguageSubs?: { dispose(): void }[] };
 g.__rLanguageSubs?.forEach((d) => d.dispose());
 g.__rLanguageSubs = subs;
 
+/** Files to re-lint when they're next shown (code ran while they were in a background tab). */
+const staleLint = new Set<monaco.editor.ITextModel>();
+
 function watchModel(model: monaco.editor.ITextModel) {
   scheduleCheck(model, 200);
-  subs.push(
+  const own = [
     model.onDidChangeContent(() => {
       lastEdit.set(model, Date.now());
       scheduleCheck(model);
     }),
     model.onDidChangeLanguage(() => scheduleCheck(model, 0)),
+  ];
+  const all = { dispose: () => own.forEach((d) => d.dispose()) };
+  subs.push(all);
+  own.push(
     model.onWillDispose(() => {
       clearTimeout(checkTimers.get(model));
       clearTimeout(lintTimers.get(model));
       pendingChecks.delete(model);
       pendingLints.delete(model);
+      staleLint.delete(model);
+      // Drop this model's listeners (they hold the model and its text).
+      all.dispose();
+      subs.splice(subs.indexOf(all), 1);
     }),
   );
 }
+const isR = (m: monaco.editor.ITextModel) => m.getLanguageId() === 'r' || m.getLanguageId() === 'quarto';
+/** Models shown in an editor now. */
+const shownModels = () => new Set(monaco.editor.getEditors().map((e) => e.getModel()).filter((m): m is monaco.editor.ITextModel => !!m));
+subs.push(
+  monaco.editor.onDidCreateEditor((ed) => {
+    ed.onDidChangeModel(() => {
+      const m = ed.getModel();
+      if (m && staleLint.delete(m)) scheduleLint(m, 300);
+    });
+  }),
+);
 subs.push(monaco.editor.onDidCreateModel(watchModel));
 for (const m of monaco.editor.getModels()) watchModel(m);
 
@@ -435,9 +458,16 @@ const offSession = session.on((ev) => {
     pendingLints.clear();
     for (const m of list) scheduleLint(m, 300);
   }
-  // Running code can define functions or load packages: recheck open files.
-  if (ev.type === 'idle' && settings.lint)
-    for (const m of monaco.editor.getModels()) if (['r', 'quarto'].includes(m.getLanguageId())) scheduleLint(m, 800);
+  // Running code can define functions or load packages: recheck the file on
+  // screen now, and others when they're shown.
+  if (ev.type === 'idle' && settings.lint) {
+    const shown = shownModels();
+    for (const m of monaco.editor.getModels()) {
+      if (!isR(m)) continue;
+      if (shown.has(m)) scheduleLint(m, 800);
+      else staleLint.add(m);
+    }
+  }
   // Recheck everything once R is up (models opened while it was starting).
   if (ev.type === 'status' && ev.status === 'ready') for (const m of monaco.editor.getModels()) scheduleCheck(m, 300);
 });
@@ -615,6 +645,8 @@ const rCompletions: monaco.languages.CompletionItemProvider = {
     if (!items.length) return none;
 
     const sig = call ? await signatureOf(call.fn) : null;
+    // The file may have been closed while R answered.
+    if (model.isDisposed()) return none;
     const used = new Set(call ? call.args.slice(0, -1).map(namedArg).filter((n): n is string => !!n) : []);
     // Functions that take their data through "..." (c, list, paste, ...): the
     // argument names after each comma would just get in the way.
@@ -733,8 +765,19 @@ export interface OutlineItem {
   name: string;
   kind: 'section' | 'function' | 'heading' | 'chunk';
   line: number;
+  /** Last line of what it covers: a function's closing brace, a section or heading up to the next of its level, a chunk's closing fence. */
+  end: number;
   /** Nesting for display: heading / section level, functions one deeper. */
   level: number;
+}
+
+/** Sections / headings end where the next one at the same or a higher level starts (or at `last`). */
+function closeLevels(items: OutlineItem[], kinds: OutlineItem['kind'][], last: number) {
+  items.forEach((o, i) => {
+    if (!kinds.includes(o.kind)) return;
+    const next = items.slice(i + 1).find((n) => kinds.includes(n.kind) && n.level <= o.level);
+    o.end = next ? next.line - 1 : last;
+  });
 }
 
 const SECTION = /^\s*(#+)\s*(.*?)\s*(?:-{4,}|={4,}|#{4,})\s*$/;
@@ -744,19 +787,26 @@ function rOutline(region: RRegion, baseLevel: number): OutlineItem[] {
   const out: OutlineItem[] = [];
   const lines = region.text.split('\n');
   const { lineDepth } = scanR(region.text);
+  const last = region.line + lines.length - 1;
   let level = baseLevel;
   lines.forEach((t, i) => {
     if (lineDepth[i] > 0) return;
     const sec = SECTION.exec(t);
     if (sec && sec[2]) {
       level = baseLevel + Math.min(sec[1].length, 4) - 1;
-      out.push({ name: sec[2], kind: 'section', line: region.line + i, level });
+      out.push({ name: sec[2], kind: 'section', line: region.line + i, end: last, level });
       level++;
       return;
     }
     const fn = FUNCTION.exec(t);
-    if (fn) out.push({ name: fn[1].replace(/^`|`$/g, ''), kind: 'function', line: region.line + i, level });
+    if (fn) {
+      // The body: the lines after it still inside its brackets.
+      let j = i;
+      while (j + 1 < lines.length && lineDepth[j + 1] > 0) j++;
+      out.push({ name: fn[1].replace(/^`|`$/g, ''), kind: 'function', line: region.line + i, end: region.line + j, level });
+    }
   });
+  closeLevels(out, ['section'], last);
   return out;
 }
 
@@ -779,7 +829,7 @@ export function outline(model: monaco.editor.ITextModel): OutlineItem[] {
       ln++;
       const label =
         /\{\s*[rR][\s,]+([\w.-]+)/.exec(t)?.[1] ?? lines.map((l) => /^#\|\s*label:\s*["']?([^"'\s]+)/.exec(l)?.[1]).find(Boolean);
-      out.push({ name: label ? `${label}` : `R chunk`, kind: 'chunk', line: start, level });
+      out.push({ name: label ? `${label}` : `R chunk`, kind: 'chunk', line: start, end: Math.min(ln, n), level });
       out.push(...rOutline({ line: start + 1, text: lines.join('\n') }, level + 1));
       continue;
     }
@@ -790,10 +840,11 @@ export function outline(model: monaco.editor.ITextModel): OutlineItem[] {
     const h = /^(#{1,6})\s+(.+?)\s*(?:\{[^}]*\})?\s*#*\s*$/.exec(t);
     if (h) {
       level = h[1].length - 1;
-      out.push({ name: h[2], kind: 'heading', line: ln, level });
+      out.push({ name: h[2], kind: 'heading', line: ln, end: n, level });
       level++;
     }
   }
+  closeLevels(out, ['heading'], n);
   // Normalise levels so the shallowest item starts at 0.
   const min = Math.min(...out.map((o) => o.level));
   return out.map((o) => ({ ...o, level: o.level - (Number.isFinite(min) ? min : 0) }));
@@ -802,17 +853,26 @@ export function outline(model: monaco.editor.ITextModel): OutlineItem[] {
 const symbolProvider: monaco.languages.DocumentSymbolProvider = {
   provideDocumentSymbols(model) {
     const K = monaco.languages.SymbolKind;
-    return outline(model).map((o) => {
-      const range = new monaco.Range(o.line, 1, o.line, model.getLineMaxColumn(o.line));
-      return {
+    // Full ranges, nested by what contains what, so Monaco's sticky scroll
+    // can pin a section above the function you're in.
+    const top: monaco.languages.DocumentSymbol[] = [];
+    const stack: { sym: monaco.languages.DocumentSymbol; end: number }[] = [];
+    for (const o of outline(model)) {
+      const end = Math.max(o.line, Math.min(o.end, model.getLineCount()));
+      const sym: monaco.languages.DocumentSymbol = {
         name: o.name,
         detail: '',
         kind: o.kind === 'function' ? K.Function : o.kind === 'chunk' ? K.Module : K.String,
         tags: [],
-        range,
-        selectionRange: range,
+        range: new monaco.Range(o.line, 1, end, model.getLineMaxColumn(end)),
+        selectionRange: new monaco.Range(o.line, 1, o.line, model.getLineMaxColumn(o.line)),
+        children: [],
       };
-    });
+      while (stack.length && stack[stack.length - 1].end < o.line) stack.pop();
+      (stack.length ? stack[stack.length - 1].sym.children! : top).push(sym);
+      stack.push({ sym, end });
+    }
+    return top;
   },
 };
 
@@ -916,3 +976,6 @@ for (const lang of ['r', 'quarto']) {
   );
 }
 subs.push(monaco.languages.registerDocumentSymbolProvider('markdown', symbolProvider));
+
+/** The R providers, for an editor other than Monaco (the experimental CodeMirror pane). */
+export const rProviders = { completion: rCompletions, hover: hoverProvider, signature: signatureProvider };

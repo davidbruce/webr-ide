@@ -1,0 +1,133 @@
+/* The experimental CodeMirror editor pane (most of its look is in cm-setup.ts). */
+
+.cm-host .cm-editor {
+  height: 100%;
+  font-size: var(--cm-font-size, 14px);
+}
+.cm-host .cm-scroller {
+  overscroll-behavior: contain;
+}
+/* Touch screens: room to scroll the last lines above the on-screen keyboard. */
+@media (pointer: coarse) {
+  .cm-host .cm-content {
+    padding-bottom: 40vh;
+  }
+}
+
+/* Help in completion details, hover and the signature hint. */
+.cm-help {
+  max-width: 460px;
+  font: 13px/1.45 var(--font-ui);
+}
+.cm-help p {
+  margin: 4px 0;
+}
+.cm-help code,
+.cm-help-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.cm-help-code {
+  margin: 4px 0;
+  padding: 4px 6px;
+  background: var(--bg-toolbar);
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+.cm-tooltip-hover {
+  padding: 4px 10px;
+}
+.cm-sig {
+  padding: 3px 8px;
+  font: 12.5px var(--font-mono);
+}
+.cm-sig b {
+  color: var(--accent);
+}
+
+/* The glyph margin (breakpoints, the paused line). Phones use line numbers instead, as Monaco does. */
+.cm-glyph-gutter .cm-gutterElement {
+  position: relative;
+  width: 18px;
+  padding: 0;
+}
+/* Markers on the same line (a breakpoint where R is paused) overlap, as in Monaco. */
+.cm-glyph-gutter .cm-gutterElement > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.workbench.phone .cm-glyph-gutter {
+  display: none;
+}
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  cursor: default;
+}
+.cm-editor .bp-dot {
+  margin: 0.45em 0 0 4px;
+}
+/* Inline anchors for widgets (notebook run buttons are placed from the line's start). */
+.cm-node-widget {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: top;
+}
+.cm-inlay-hint {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.cm-glyph-gutter .debug-arrow {
+  z-index: 1;
+}
+
+/* Sticky scroll: the enclosing functions, sections and headings, pinned above the code. */
+.cm-sticky {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 250;
+  overflow: hidden;
+  background: var(--bg-pane);
+  box-shadow: 0 3px 4px -2px rgba(0, 0, 0, 0.18);
+  font-size: var(--cm-font-size, 14px);
+  line-height: var(--cm-line-height, 1.5);
+  cursor: pointer;
+}
+.cm-sticky-line {
+  display: flex;
+  white-space: pre;
+  line-height: inherit;
+  align-items: center;
+}
+.cm-sticky-line:hover {
+  background: var(--bg-hover);
+}
+.cm-sticky-num {
+  flex: none;
+  box-sizing: border-box;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--text-faint);
+  background: var(--bg-toolbar);
+  border-right: 1px solid var(--border-soft);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.cm-sticky-code {
+  padding-left: 6px;
+  font-family: "SF Mono", Menlo, Monaco, "Cascadia Code", Consolas, monospace;
+}
+
+/* Rainbow brackets (Monaco's colours). */
+.cm-rb-0 { color: #0431fa; }
+.cm-rb-1 { color: #319331; }
+.cm-rb-2 { color: #7b3814; }
+.cm-rb-bad { color: #e51400; text-decoration: wavy underline; }
+:root[data-theme='dark'] .cm-rb-0 { color: #ffd700; }
+:root[data-theme='dark'] .cm-rb-1 { color: #da70d6; }
+:root[data-theme='dark'] .cm-rb-2 { color: #179fff; }
+:root[data-theme='dark'] .cm-rb-bad { color: #ff4d4d; }

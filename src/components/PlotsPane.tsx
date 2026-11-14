@@ -5,7 +5,6 @@ import { pkgCache, checkUpdates, clearOtherRVersions, cachedBytes } from '../lib
 import { wsConfig } from '../lib/workspace-config';
 import { openSettings } from '../lib/settings';
 import { installPackages, updatePackages, removePackage, openPackageBrowser } from '../lib/pkg-actions';
-import { rString } from '../lib/r-session';
 import { askText, formatBytes, toast } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
@@ -13,6 +12,7 @@ import { OutputPane } from './Notebook';
 import { PreviewPane } from './Preview';
 import { HelpPane } from './HelpPane';
 import { openHelpIndex } from '../lib/help';
+import './PlotsPane.css';
 
 // ---------------------------------------------------------------- plot history
 
@@ -127,7 +127,7 @@ function PlotNav() {
 
 export function PlotsPane() {
   // Another workspace: its own plots (R restarts too).
-  createEffect(on(() => state.workspace, (ws, prev) => prev && ws !== prev && clearPlots(), { defer: true }));
+  createEffect(on(() => state.workspaceOpens, (n) => n > 1 && clearPlots(), { defer: true }));
   return (
     <div class="pane">
       <PaneHeader
@@ -304,8 +304,8 @@ function PackagesView() {
   const systemPkgs = createMemo(() => state.packages.filter((p) => !p.user && match(p)));
   const updates = createMemo(() => Object.values(pkgCache.updates).filter(Boolean));
 
+  // (After each command, ide.ts refreshes the list while this tab is open.)
   onMount(() => void refreshPackages());
-  createEffect(on(() => state.busy, (b) => !b && void refreshPackages(), { defer: true }));
 
   function doInstall(e: Event) {
     e.preventDefault();

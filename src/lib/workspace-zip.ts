@@ -2,7 +2,9 @@
 // device) and import one as a new workspace.
 import { Zip, ZipDeflate, AsyncZipDeflate, ZipPassThrough, unzip } from 'fflate';
 import * as fs from './opfs';
-import { state, editor, syncFromR, downloadBlob, refreshWorkspaces, switchWorkspace, session, saveEnvironmentImage } from './ide';
+import { state, editor, session } from './ide-state';
+import { syncFromR, downloadBlob } from './file-sync';
+import { refreshWorkspaces, switchWorkspace, saveEnvironmentImage } from './workspaces';
 import { askText, choiceDialog, formatBytes, toast } from './ui';
 
 /** Already compressed: stored as-is (deflating them again wastes time). */

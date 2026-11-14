@@ -1,0 +1,59 @@
+/* ------------------------------------------------------------------ examples menu */
+.examples-menu {
+  width: min(370px, calc(100vw - 16px));
+  max-width: none;
+}
+.examples-intro {
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.examples-scroll {
+  max-height: min(62vh, 560px);
+}
+.examples-menu .menu-title {
+  padding-top: 10px;
+}
+.example-item {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  white-space: normal;
+}
+.example-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.example-pkg {
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.example-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.status-dot {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.status-dot.works {
+  background: var(--ok);
+}
+.status-dot.partial {
+  background: var(--warn);
+}
+.examples-legend {
+  display: flex;
+  gap: 14px;
+}
+.examples-legend .status-dot {
+  margin: 0 3px 0 0;
+}

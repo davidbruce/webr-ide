@@ -1,0 +1,71 @@
+/* ------------------------------------------------------------------ console */
+.console-body {
+  overflow: hidden;
+  background: var(--bg-pane);
+}
+.console-term.wterm,
+.console-term {
+  position: absolute;
+  inset: 0;
+  --term-font-family: var(--font-mono);
+  --term-font-size: 13px;
+  --term-line-height: 1.38;
+  --term-row-height: 18px;
+  --term-bg: var(--bg-pane);
+  --term-fg: var(--text);
+  --term-cursor: var(--accent);
+  --term-color-0: #1f2a35;
+  --term-color-1: #c7362f;
+  --term-color-2: #2f8a3c;
+  --term-color-3: #a86b00;
+  --term-color-4: #2563eb;
+  --term-color-5: #9333ea;
+  --term-color-6: #0e7490;
+  --term-color-7: #6a7682;
+  --term-color-8: #98a3ad;
+  --term-color-9: #dc2626;
+  --term-color-10: #16a34a;
+  --term-color-11: #ca8a04;
+  --term-color-12: #3b82f6;
+  --term-color-13: #a855f7;
+  --term-color-14: #0891b2;
+  --term-color-15: #ffffff;
+  padding: 6px 8px;
+  border-radius: 0;
+  box-shadow: none;
+}
+:root[data-theme='dark'] .console-term {
+  --term-color-0: #15181c;
+  --term-color-1: #f06a62;
+  --term-color-2: #4cc06a;
+  --term-color-3: #e7a93a;
+  --term-color-4: #7daaff;
+  --term-color-5: #c58cff;
+  --term-color-6: #46c3d6;
+  --term-color-7: #c3ccd6;
+  --term-color-8: #6b7682;
+  --term-color-15: #ffffff;
+}
+@media (pointer: coarse) {
+  .console-term {
+    --term-font-size: 14px;
+    --term-row-height: 19px;
+  }
+}
+
+/* Error locations in the console are links. */
+.console-term .term-row span[style*='underline'] {
+  cursor: pointer;
+}
+
+.debug-bar {
+  display: flex;
+  gap: 2px;
+  padding: 0 4px;
+  margin-right: 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paused) 22%, transparent);
+}
+.debug-bar .tb-btn.run {
+  color: var(--ok);
+}

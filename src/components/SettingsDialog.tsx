@@ -5,8 +5,25 @@ import { settings, setSetting, resetSettings, settingsOpen, setSettingsOpen, typ
 import { setThemePref, themePref, type ThemePref } from '../lib/ui';
 import { rKeyboardEnabled, setRKeyboardEnabled } from '../lib/rkeyboard';
 import { wsConfig, setWorkspaceSetting } from '../lib/workspace-config';
-import { setLibraryMode, writeRenvLock } from '../lib/ide';
+import { setLibraryMode, writeRenvLock, editor, saveIdeState } from '../lib/ide';
+import { choiceDialog, reloading } from '../lib/ui';
 import { editSnippets } from '../lib/snippets';
+import './SettingsDialog.css';
+
+/** Change the editor: save (or not) unsaved files, keep the open tabs, reload. */
+async function switchEditor(engine: Settings['editorEngine']) {
+  if (engine === settings.editorEngine) return;
+  const ed = editor();
+  if (ed?.hasDirty()) {
+    const r = await choiceDialog('Switch editor', 'Save your unsaved files before the page reloads?', 'Save All', { label: "Don't Save", value: 'discard' });
+    if (r === null) return;
+    if (r !== 'discard') await ed.saveAll();
+  }
+  await saveIdeState();
+  setSetting('editorEngine', engine);
+  reloading.now = true;
+  location.reload();
+}
 
 const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
@@ -91,6 +108,17 @@ export function SettingsDialog() {
               </Row>
 
               <h4>Editor</h4>
+              <Row label="Editor (experimental)" hint="CodeMirror 6 instead of Monaco, for comparing (it uses iOS's own text selection on touch screens). Switching reloads the page; open files stay open.">
+                <Segmented
+                  label="Editor"
+                  value={settings.editorEngine}
+                  options={[
+                    ['monaco', 'Monaco'],
+                    ['codemirror', 'CodeMirror'],
+                  ]}
+                  set={(v) => void switchEditor(v as Settings['editorEngine'])}
+                />
+              </Row>
               <Row label="Tab width">
                 <Segmented
                   label="Tab width"

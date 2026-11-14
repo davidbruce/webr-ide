@@ -4,7 +4,7 @@
 // keyboard down while they still have focus and a cursor.
 
 import { createEffect, createRoot, createSignal } from 'solid-js';
-import { phone } from './ide';
+import { phone } from './ide-state';
 
 const LS = 'webr-ide:r-keyboard';
 const coarse = window.matchMedia('(pointer: coarse)');
@@ -39,7 +39,7 @@ export function setRKeyboardEnabled(on: boolean) {
 }
 
 /** The text areas the editor and console type into. */
-const TARGETS = '.monaco-editor textarea.inputarea, .monaco-editor .native-edit-context, .console-term textarea';
+const TARGETS = '.monaco-editor textarea.inputarea, .monaco-editor .native-edit-context, .cm-editor .cm-content, .console-term textarea';
 
 function apply() {
   const none = rKeyboardActive();

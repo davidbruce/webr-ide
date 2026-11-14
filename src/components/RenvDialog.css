@@ -1,0 +1,99 @@
+/* ---------------------------------------------------------------- renv.lock check */
+.renv {
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(var(--app-height) - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.renv h3 {
+  margin: 0 0 10px;
+}
+.renv-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 13px;
+}
+.renv-verdict.ok {
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, var(--bg-pane));
+}
+.renv-verdict.warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 14%, var(--bg-pane));
+}
+.renv-verdict.bad {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-pane));
+}
+.renv-r {
+  margin: 8px 0 0 !important;
+  font-size: 12px;
+}
+.renv-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 8px -20px 12px;
+  padding: 0 20px;
+}
+.renv-group {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.renv-group.missing,
+.renv-group.issue {
+  color: var(--danger);
+}
+.renv-group.older,
+.renv-group.newer {
+  color: var(--warn);
+}
+.renv-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.renv-table td {
+  padding: 3px 6px 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+.renv-name {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.renv-ver {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.renv-arrow {
+  color: var(--text);
+}
+.renv-note {
+  color: var(--text-muted);
+}
+.renv .dialog-actions .tb-spacer {
+  flex: 1;
+}
+.renv .link {
+  margin-top: 8px;
+}
+.renv-table table {
+  table-layout: fixed;
+}
+.renv-table td.renv-name {
+  width: 26%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.renv-table td.renv-ver {
+  width: 30%;
+}

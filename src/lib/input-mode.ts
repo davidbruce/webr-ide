@@ -46,7 +46,7 @@ if (!finePointer.matches) {
       // Modifier shortcuts and arrows only come from a real keyboard; plain
       // keys count when the on-screen keyboard isn't showing.
       const target = e.target as HTMLElement | null;
-      if (!target?.closest?.('.monaco-editor, .console-term, input, textarea')) return;
+      if (!target?.closest?.('.monaco-editor, .cm-editor, .console-term, input, textarea')) return;
       if (e.key === 'Unidentified' || e.key === 'Process') return;
       if (!softKeyboardUp() || e.metaKey || e.ctrlKey) setHardwareKeyboard(true);
     },

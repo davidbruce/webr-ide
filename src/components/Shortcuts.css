@@ -1,0 +1,48 @@
+/* ---------------------------------------------------------------- shortcuts */
+.shortcuts {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(var(--app-height) - 48px);
+  overflow-y: auto;
+}
+.shortcuts h3 {
+  margin: 0 0 8px;
+}
+.shortcuts-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 4px 24px;
+  margin-bottom: 12px;
+}
+.shortcuts h4 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.shortcuts table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-soft);
+}
+.shortcuts th {
+  width: 110px;
+  font-weight: normal;
+}
+.shortcuts kbd {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-toolbar);
+  white-space: nowrap;
+}

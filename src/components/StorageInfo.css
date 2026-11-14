@@ -1,0 +1,53 @@
+/* ---------------------------------------------------------------- storage problems */
+
+.storage-banner {
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(720px, calc(100vw - 24px));
+  padding: 10px 10px 10px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 16%, var(--bg-pane));
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.storage-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.storage-info {
+  width: min(560px, calc(100vw - 32px));
+}
+.storage-info-issue {
+  color: var(--warn);
+  font-size: 13px;
+}
+.storage-info table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 8px 0 12px;
+}
+.storage-info th,
+.storage-info td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.storage-info th {
+  font-weight: 500;
+  color: var(--text-muted);
+  width: 42%;
+}
+.storage-info td {
+  word-break: break-word;
+}

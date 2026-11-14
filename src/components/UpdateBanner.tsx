@@ -5,6 +5,7 @@ import { updateReady } from '../lib/app-update';
 import { editor, saveEnvironmentImage, session } from '../lib/ide';
 import { choiceDialog, toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './UpdateBanner.css';
 
 export function UpdateBanner() {
   const [hidden, setHidden] = createSignal(false);

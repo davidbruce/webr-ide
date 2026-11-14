@@ -7,12 +7,13 @@ import { editor, KeyAction, debugCommand, type DebugCommand } from '../lib/ide';
 import { consoleApi } from './Console';
 import { Icon } from './Icon';
 import { rKeyboardActive, rKeyboardEnabled, useSystemKeyboard } from '../lib/rkeyboard';
+import './KeyBar.css';
 
 type Target = 'editor' | 'console';
 
 function targetOf(el: Element | null): Target | null {
   if (!el) return null;
-  if (el.closest('.monaco-editor')) return 'editor';
+  if (el.closest('.monaco-editor, .cm-editor')) return 'editor';
   if (el.closest('.console-term')) return 'console';
   return null;
 }

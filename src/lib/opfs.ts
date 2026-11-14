@@ -42,10 +42,6 @@ export function splitPath(path: string): string[] {
   return path.split('/').filter((s) => s && s !== '.');
 }
 
-export function joinPath(...parts: string[]): string {
-  return parts.flatMap(splitPath).join('/');
-}
-
 export function dirname(path: string): string {
   const s = splitPath(path);
   s.pop();
@@ -266,6 +262,15 @@ export async function deleteWorkspace(name: string): Promise<void> {
 export async function renameWorkspace(from: string, to: string): Promise<void> {
   const root = await wsRoot();
   const src = await root.getDirectoryHandle(from);
+  // One step where the browser supports moving handles (WebKit does for OPFS).
+  const move = (src as FileSystemDirectoryHandle & { move?: (dir: FileSystemDirectoryHandle, name: string) => Promise<void> }).move;
+  if (typeof move === 'function' && !memoryMode) {
+    try {
+      return await move.call(src, root, to);
+    } catch {
+      /* copy instead */
+    }
+  }
   const dst = await root.getDirectoryHandle(to, { create: true });
   await copyDir(src, dst);
   await root.removeEntry(from, { recursive: true });
@@ -406,10 +411,10 @@ export async function remove(ws: string, path: string): Promise<void> {
   await parent.removeEntry(basename(path), { recursive: true });
 }
 
-async function copyDir(src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle, srcPathForWorker?: string[]) {
+async function copyDir(src: FileSystemDirectoryHandle, dst: FileSystemDirectoryHandle) {
   for await (const [name, h] of entries(src)) {
     if (h.kind === 'directory') {
-      await copyDir(h as FileSystemDirectoryHandle, await dst.getDirectoryHandle(name, { create: true }), srcPathForWorker);
+      await copyDir(h as FileSystemDirectoryHandle, await dst.getDirectoryHandle(name, { create: true }));
     } else {
       const data = new Uint8Array(await (await (h as FileSystemFileHandle).getFile()).arrayBuffer());
       const out = await dst.getFileHandle(name, { create: true });

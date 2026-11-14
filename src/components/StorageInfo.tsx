@@ -6,6 +6,7 @@ import { Portal } from 'solid-js/web';
 import { storageDiagnostics, storageIssue } from '../lib/opfs';
 import { toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './StorageInfo.css';
 
 const [open, setOpen] = createSignal(false);
 export const openStorageInfo = () => setOpen(true);

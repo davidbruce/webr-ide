@@ -2,6 +2,7 @@
 // it's the slow first start (the runtime downloads once, then works offline).
 import { createSignal, onCleanup, Show } from 'solid-js';
 import { boot, bootStarted } from '../lib/boot';
+import './StartupCard.css';
 
 export function StartupCard() {
   const [now, setNow] = createSignal(performance.now());

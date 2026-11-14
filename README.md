@@ -15,7 +15,9 @@ An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to W
 - **Plots / Packages / Help:** plot history, an **Expand** button that re-renders the plot full size in a closable window, PNG save and download, package install and attach, and R help pages as formatted HTML: links between pages, back and forward, a package's index of help pages and vignettes, highlighted examples with **Run examples** and Copy buttons, maths typeset with KaTeX, and a topic search box (`stats::sd`, `??regression`). `?topic`, `help(package = )`, `vignette()` and F1 in the editor all open here
 - **Files sidebar:** create, rename, delete, upload, download, and drag-and-drop; import CSV files; source scripts
 - **Workspaces:** each workspace has its own files, history, open tabs, and saved environment (`.RData`). **Export as .zip** (workspace menu) downloads all of it; **Import from .zip** makes a new workspace from one, for backups or moving to another device
+- **Sticky scroll:** while you scroll through a long function, it and the section or heading it's in stay pinned above the code (up to five lines, with line numbers); tap one to jump to it. Both editors
 - **Code snippets:** type a snippet's name and press Tab: `fun`, `for`, `if`, `el`, `ei`, `while`, `switch`, `tryc`, `lib`, `src`, `ret`, `mat`, the apply family, `df`, `sec`, and `ts` (a timestamp comment). Tab moves between the placeholders. Snippets also appear in the suggestion list and work in Quarto R chunks. Edit them, or add your own, with **Edit Code Snippets** (command palette or Settings). There's one set for all workspaces, kept in the browser's storage, in RStudio's `r.snippets` format, so you can paste in snippets from RStudio, including `` `r expr` `` parts that R fills in when the snippet is inserted
+- **Experimental CodeMirror 6 editor:** Settings → Editor switches the script editor between Monaco (the default) and CodeMirror 6, for comparing; the page reloads and open files stay open. CodeMirror has R and Quarto colouring, R's completions with help, hover help, the signature hint on touch screens, syntax and problem underlines, snippets, find / replace, a command palette, the RStudio shortcuts, the key bar and the R keyboard. Quarto chunk outputs, run buttons and inline values, breakpoints and the paused line, rainbow brackets and sticky scroll work as in Monaco. On touch screens it keeps iOS's own text selection
 - **Settings** (⌘, or the workspace menu): theme, editor and console font size, tab width, line wrapping, help on hover, the code checks, and the R keyboard on phones
 - **Per-workspace options** (Settings → *This workspace*, stored in the workspace's `.ide/` folder so they travel with a zip export):
   - **Tab width** for this workspace, overriding your default.
@@ -229,6 +231,7 @@ npm run test:pwa                # production build: offline start, update banner
 | `notebook.spec.ts` | Quarto chunks inline and in the Output tab, rendering to HTML |
 | `workspace.spec.ts` | Settings, per-workspace tab width, `.Rprofile` (and renv's activation being skipped), zip export/import |
 | `packages.spec.ts` | workspace libraries (links instead of downloads, restarts only when needed), the renv.lock check, writing renv.lock, styler (`@network`) |
+| `codemirror.spec.ts` | the CodeMirror editor: running, completions, errors, snippets, saving, Quarto chunk output, breakpoints and pausing, switching editors, the R keyboard on a phone |
 | `layout.spec.ts` | minimizing panes, expanding vertically and horizontally, column strips, panes in their own window |
 | `phone.spec.ts` | the phone layout, outline and search on a phone, the R keyboard typing fast without losing focus |
 | `pwa.spec.ts` | offline start and the update banner, against a production build |
@@ -287,7 +290,14 @@ src/
     help.ts        Help pane history and link handling
     snippets.ts    code snippets (r.snippets format), Tab expansion
     layout.ts      pane layout: split sizes, minimized panes, panes in their own window
-    ide.ts         app state, workspaces, OPFS ⇄ webR file sync, history, autosave
+    ide.ts         R event dispatch and the after-each-command pass; re-exports the modules below
+    ide-state.ts   the app store, the R session, path helpers, pane switching, saved IDE state
+    workspaces.ts  open / switch / rename / delete workspaces, library mode, autosave, restart R
+    file-sync.ts   OPFS ⇄ R file sync (drive mount or mirrored copy), file operations, file tree
+    debugger.ts    pausing, call stack, frames, breakpoints
+    env-refresh.ts environment, working directory, packages list, completions
+    history.ts     command history
+    renv-actions.ts renv.lock check and export
     packages.ts    versioned package cache: capture installs, mount on start, updates
     pkg-index.ts   webR repo index + R-universe search/details (package browser)
     pkg-actions.ts install / update / remove shared by the UI
@@ -295,8 +305,17 @@ src/
     opfs.ts        OPFS storage (+ in-memory fallback, Safari worker writer)
     monaco.ts      Monaco setup, themes, R completion provider, statement detection
     ui.ts          dialogs, toasts, theme
-  components/      TopBar, Workbench (layout/splitters), Sidebar, Editor,
-                   Console, EnvPane, PlotsPane, DataGrid, PackageBrowser, Modals
+  components/      TopBar, Workbench (layout/splitters), Pane, Sidebar, Editor, Console,
+                   EnvPane, PlotsPane, HelpPane, DataGrid, PackageBrowser, Modals, …
+                   each with its own .css next to it
+  components/cm/   the experimental CodeMirror 6 pane: CmEditor (CodeMirror behind the
+                   part of Monaco's editor interface the shared editor, notebook and
+                   debugger modules use, incl. decorations, view zones and widgets),
+                   setup (languages, colours, keys), R intelligence adapters, phone keys
+  components/editor/  the script editor's parts: tabs, run, debugging, navigation,
+                   format, keybindings, view (Monaco options), tab strip, toolbar, grid view
+  styles/          app-wide CSS: tokens, base, controls, shell; responsive.css (phone and
+                   narrow overrides) is imported last, after every component's CSS
   sw.ts            service worker (precache, COOP/COEP injection, webR runtime cache, workspace drive)
   sw-dev.ts        development service worker (workspace drive only; served as /dev-sw.js)
   lib/drive/       workspace drive: server (service worker), worker patch, page client

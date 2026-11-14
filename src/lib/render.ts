@@ -5,7 +5,7 @@
 // highlighting and maths. Everything is inlined so the page works offline.
 
 import { createStore } from 'solid-js/store';
-import { session } from './ide';
+import { session } from './ide-state';
 import { monaco } from './monaco';
 import { base64, CORS_IMAGES, inlineDeps, MIME, parseManifest } from './html-page';
 

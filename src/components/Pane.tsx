@@ -144,8 +144,3 @@ function LayoutMenu(props: { pane: PaneId; at: DOMRect; close: () => void }) {
     </Portal>
   );
 }
-
-/** Small toolbar row placed under a pane header. */
-export function PaneToolbar(props: { children: JSX.Element }) {
-  return <div class="pane-toolbar">{props.children}</div>;
-}

@@ -3,7 +3,7 @@
 // from R's file system and inlined, as are the images/fonts CSS refers to.
 // Such pages work offline and inside a sandboxed iframe.
 
-import { session } from './ide';
+import { session } from './ide-state';
 
 export interface Manifest {
   body: string;

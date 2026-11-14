@@ -12,7 +12,7 @@
 // outside any workspace. Without that file the defaults apply.
 import { monaco, inRChunk } from './monaco';
 import * as fs from './opfs';
-import { session, editor } from './ide';
+import { session, editor } from './ide-state';
 
 export const SNIPPETS_FILE = 'snippets/r.snippets';
 
@@ -201,7 +201,7 @@ export async function editSnippets() {
 }
 
 /** Run each `r expr` in R and put its result (escaped for a snippet) in its place. */
-async function resolveR(body: string): Promise<string> {
+export async function resolveR(body: string): Promise<string> {
   if (!body.includes('`r ')) return body;
   const parts = body.split(/(`r [^`]+`)/);
   for (let i = 1; i < parts.length; i += 2) {
@@ -218,6 +218,12 @@ async function resolveR(body: string): Promise<string> {
     parts[i] = value.replace(/[\\$}]/g, '\\$&');
   }
   return parts.join('');
+}
+
+/** The snippet name at the end of `before` (text before the cursor), if any. */
+export function snippetNameIn(before: string): string | null {
+  const m = before.match(/(?:^|[^\w.$@])([A-Za-z_.][\w.]*)$/);
+  return m && snippets().has(m[1]) ? m[1] : null;
 }
 
 /** The snippet name just before the cursor, if any. */
@@ -255,7 +261,7 @@ export function snippetAtCursor(ed: monaco.editor.ICodeEditor): boolean {
   return !!model && !!sel && sel.isEmpty() && !!nameBefore(model, sel.getPosition());
 }
 
-const provider: monaco.languages.CompletionItemProvider = {
+export const snippetCompletions: monaco.languages.CompletionItemProvider = {
   async provideCompletionItems(model, position) {
     if (model.getLanguageId() === 'quarto' && !inRChunk(model, position.lineNumber)) return { suggestions: [] };
     const before = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
@@ -289,4 +295,4 @@ const provider: monaco.languages.CompletionItemProvider = {
 
 const g = globalThis as { __rSnippetSubs?: { dispose(): void }[] };
 g.__rSnippetSubs?.forEach((d) => d.dispose());
-g.__rSnippetSubs = ['r', 'quarto'].map((lang) => monaco.languages.registerCompletionItemProvider(lang, provider));
+g.__rSnippetSubs = ['r', 'quarto'].map((lang) => monaco.languages.registerCompletionItemProvider(lang, snippetCompletions));

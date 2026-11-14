@@ -65,6 +65,9 @@ test('F1 in the editor opens help without printing to the console', async ({ pag
 
 test('snippets expand with Tab; your own snippets apply in every workspace', async ({ page }) => {
   await newFile(page, 's.R', '');
+  // Without pop-up suggestions: Tab would (rightly) accept one if R's list for
+  // a placeholder ("add" → add.scope) appeared before it was pressed.
+  await page.evaluate(() => (window as any).__webrIde.editor().setQuickSuggest(false));
   await page.locator('.monaco-editor .view-lines').click();
   await page.keyboard.type('fun');
   await page.keyboard.press('Tab');

@@ -1,0 +1,216 @@
+/* ---------------------------------------------------------------- experimental R keyboard */
+
+/* iPhone look: grey board, white letter keys, darker modifiers, system font.
+   Every key's box fills its whole cell (no gaps between keys, so no dead
+   spots for fast typing); the visible key is drawn inside it by ::before. */
+.rk {
+  --rk-bg: #d1d4d9;
+  --rk-key: #ffffff;
+  --rk-mod: #abb0ba;
+  --rk-text: #000000;
+  --rk-shadow: #898a8d;
+  --rk-tool: rgba(255, 255, 255, 0.55);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 max(4px, env(safe-area-inset-bottom));
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  background: var(--rk-bg);
+  color: var(--rk-text);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  /* No pinch-zoom or double-tap zoom over the keyboard. */
+  touch-action: none;
+}
+:root[data-theme='dark'] .rk {
+  --rk-bg: #2b2b2d;
+  --rk-key: #6b6b6e;
+  --rk-mod: #464649;
+  --rk-text: #ffffff;
+  --rk-shadow: #1a1a1b;
+  --rk-tool: rgba(255, 255, 255, 0.1);
+}
+
+.rk-suggest {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 36px;
+  padding: 0 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  border-bottom: 1px solid color-mix(in srgb, var(--rk-shadow) 35%, transparent);
+}
+.rk-suggest::-webkit-scrollbar {
+  display: none;
+}
+.rk-suggest-empty {
+  font-size: 12px;
+  padding-left: 4px;
+  color: color-mix(in srgb, var(--rk-text) 45%, transparent);
+}
+.rk-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  cursor: pointer;
+}
+.rk-chip.fn {
+  color: var(--accent);
+}
+
+.rk-row {
+  display: flex;
+}
+.rk-tools {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 2px 3px;
+  border-bottom: 1px solid color-mix(in srgb, var(--rk-shadow) 35%, transparent);
+  --rk-in-y: 2.5px;
+  --rk-lift: 3px;
+  --rk-in-x: 2.5px;
+}
+.rk-tools .rk-row {
+  height: 39px;
+}
+.rk-keys {
+  display: flex;
+  flex-direction: column;
+  padding: 9px 0 0;
+  --rk-in-y: 5.5px;
+  /* Fingertips register lower than where you aim, so (like the iPhone
+     keyboard) each key is drawn this far above the middle of its touch
+     area: a touch slightly below a key still counts for it. */
+  --rk-lift: 9px;
+  --rk-in-x: 3px;
+}
+.rk-keys .rk-row {
+  height: 53px;
+}
+
+.rk-key {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rk-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-size: 23px;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.rk-key::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(var(--rk-in-y) - var(--rk-lift, 0px));
+  bottom: calc(var(--rk-in-y) + var(--rk-lift, 0px));
+  left: calc(var(--pad-l, 0%) + var(--rk-in-x));
+  right: calc(var(--pad-r, 0%) + var(--rk-in-x));
+  border-radius: 5px;
+  background: var(--rk-key);
+  box-shadow: 0 1px 0 var(--rk-shadow);
+}
+/* The label, centred on the visible key rather than the touch area. */
+.rk-face {
+  position: absolute;
+  top: calc(var(--rk-in-y) - var(--rk-lift, 0px));
+  bottom: calc(var(--rk-in-y) + var(--rk-lift, 0px));
+  left: calc(var(--pad-l, 0%) + var(--rk-in-x));
+  right: calc(var(--pad-r, 0%) + var(--rk-in-x));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.rk-key.mod::before {
+  background: var(--rk-mod);
+}
+.rk-key.mod,
+.rk-key.space {
+  font-size: 16px;
+}
+.rk-key.pressed::before {
+  background: var(--rk-mod);
+}
+.rk-key.mod.pressed::before,
+.rk-key.active::before {
+  background: var(--rk-key);
+}
+.rk-key.disabled {
+  opacity: 0.35;
+}
+
+.rk-tools .rk-key {
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.rk-tools .rk-key::before {
+  border-radius: 7px;
+  background: var(--rk-tool);
+  box-shadow: none;
+}
+.rk-tools .rk-key.pressed::before {
+  background: var(--rk-mod);
+}
+.rk-tools .rk-key.run {
+  color: var(--ok);
+}
+.rk-alt {
+  position: absolute;
+  top: calc(var(--rk-in-y) - var(--rk-lift, 0px) + 2px);
+  right: calc(var(--pad-r, 0%) + var(--rk-in-x) + 3px);
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+/* iOS-style key preview balloon. */
+.rk-keys .rk-key.char.pressed::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - var(--rk-in-y) + var(--rk-lift, 0px) + 4px);
+  transform: translateX(-50%);
+  min-width: 48px;
+  padding: 8px 6px 10px;
+  border-radius: 10px;
+  background: var(--rk-key);
+  color: var(--rk-text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  font-size: 32px;
+  line-height: 1.1;
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Landscape phones: shorter rows. */
+@media (max-height: 500px) and (pointer: coarse) {
+  .rk-suggest {
+    height: 28px;
+  }
+  .rk-tools .rk-row {
+    height: 30px;
+  }
+  .rk-keys .rk-row {
+    height: 36px;
+  }
+  .rk-keys {
+    --rk-in-y: 3px;
+    --rk-lift: 5px;
+  }
+  .rk-key {
+    font-size: 17px;
+  }
+}

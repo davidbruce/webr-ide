@@ -1,0 +1,248 @@
+/* ------------------------------------------------------------------ data grid */
+.data-grid {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-pane);
+}
+.grid-toolbar .search-box input {
+  width: 200px;
+}
+.grid-scroller {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  font: 12.5px/1 var(--font-mono);
+}
+.grid-content {
+  position: relative;
+}
+.grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+}
+.grid-head-row,
+.grid-filter-row,
+.grid-row {
+  display: flex;
+}
+.grid-filter-row {
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-toolbar);
+}
+.grid-corner,
+.grid-rn {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: none;
+  width: var(--rn-w);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  color: var(--text-faint);
+  border-right: 1px solid var(--border);
+}
+.grid-corner {
+  background: inherit;
+  justify-content: center;
+}
+.grid-cells {
+  position: relative;
+  flex: none;
+  height: 100%;
+}
+.grid-hcell,
+.grid-fcell,
+.grid-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--border-soft);
+}
+.grid-hcell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  font: 600 12px/1 var(--font-ui);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.grid-hcell:hover {
+  background: var(--bg-hover);
+}
+.grid-hcell.sorted {
+  color: var(--accent);
+}
+.grid-hcell.num {
+  justify-content: flex-end;
+}
+.grid-hlabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grid-sort {
+  flex: none;
+  font-size: 9px;
+}
+.grid-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.grid-resize:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.grid-fcell {
+  padding: 3px 4px;
+}
+.grid-fcell input {
+  width: 100%;
+  height: 100%;
+  min-height: 0 !important;
+  padding: 0 6px !important;
+  font: 12px var(--font-mono) !important;
+  border-radius: 3px;
+}
+@media (pointer: coarse) {
+  .grid-fcell input {
+    font-size: 16px !important; /* no iOS zoom on focus */
+  }
+}
+.grid-rows {
+  position: absolute;
+  left: 0;
+  will-change: transform;
+}
+.grid-row {
+  height: var(--row-h);
+  background: var(--bg-pane);
+}
+.grid-row.odd {
+  background: color-mix(in srgb, var(--bg-toolbar) 70%, var(--bg-pane));
+}
+.grid-row .grid-rn {
+  background: inherit;
+  font-size: 11.5px;
+}
+.grid-rn.sel-row {
+  color: var(--accent);
+  font-weight: 600;
+}
+.grid-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: cell;
+}
+.grid-cell.num {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.grid-cell.na {
+  color: var(--text-faint);
+}
+.grid-cell.pending::after {
+  content: '';
+  width: 60%;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--border-soft);
+}
+.grid-cell.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--bg-select);
+}
+.grid-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-toolbar);
+  border-top: 1px solid var(--border-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.grid-progress {
+  color: var(--accent);
+}
+.grid-error {
+  color: var(--danger);
+}
+.grid-blocked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.grid-blocked h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+.grid-blocked p {
+  margin: 0;
+  max-width: 460px;
+}
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.view-toggle .tb-btn {
+  border-radius: 0;
+  border: 0;
+}
+.view-toggle .tb-btn.active {
+  background: var(--bg-active);
+  color: var(--accent);
+}
+.view-toggle .tb-btn:disabled {
+  opacity: 0.35;
+}
+
+.grid-host {
+  position: absolute;
+  inset: 0;
+}
+
+.table-icon {
+  color: var(--ok);
+}
+.data-viewer-body {
+  flex: 1;
+  min-height: 0;
+}

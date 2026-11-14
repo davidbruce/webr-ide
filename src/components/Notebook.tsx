@@ -36,6 +36,7 @@ import {
 import { state, setState } from '../lib/ide';
 import { toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './Notebook.css';
 
 // ---------------------------------------------------------------- output view
 
@@ -633,6 +634,29 @@ export function attachNotebook(ed: monaco.editor.IStandaloneCodeEditor): Noteboo
     },
   };
 
+// Inline `r` values shown after the expression.
+const inlineValues: monaco.languages.InlayHintsProvider = {
+    onDidChangeInlayHints: hintsChanged.event,
+    provideInlayHints(m) {
+      const hints: monaco.languages.InlayHint[] = [];
+      for (const v of inlinesFor(docOf(m))) {
+        const d = inlineDeco.get(v.id);
+        const r = d ? m.getDecorationRange(d) : null;
+        if (!r) continue;
+        const text = v.status === 'queued' ? '…' : v.text.length > 80 ? v.text.slice(0, 79) + '…' : v.text;
+        hints.push({
+          position: { lineNumber: r.endLineNumber, column: r.endColumn },
+          label: v.status === 'error' ? ` ⚠ ${text}` : ` = ${text}`,
+          paddingLeft: false,
+          tooltip: v.status === 'error' ? `Error: ${v.text}` : v.text,
+        });
+      }
+      return { hints, dispose() {} };
+    },
+  };
+  // An editor that isn't Monaco (the CodeMirror pane) draws them itself.
+  (ed as { useInlayHints?: (p: monaco.languages.InlayHintsProvider, e: monaco.IEvent<void>) => void }).useInlayHints?.(inlineValues, hintsChanged.event);
+
   let timer: number | undefined;
   const subs = [
     ed.onDidChangeModelContent(() => {
@@ -658,26 +682,7 @@ export function attachNotebook(ed: monaco.editor.IStandaloneCodeEditor): Noteboo
       for (const v of inlinesFor(docOf(m))) inlineDeco.delete(v.id);
       forgetDoc(docOf(m));
     }),
-    // Inline `r` values shown after the expression.
-    monaco.languages.registerInlayHintsProvider('quarto', {
-      onDidChangeInlayHints: hintsChanged.event,
-      provideInlayHints(m) {
-        const hints: monaco.languages.InlayHint[] = [];
-        for (const v of inlinesFor(docOf(m))) {
-          const d = inlineDeco.get(v.id);
-          const r = d ? m.getDecorationRange(d) : null;
-          if (!r) continue;
-          const text = v.status === 'queued' ? '…' : v.text.length > 80 ? v.text.slice(0, 79) + '…' : v.text;
-          hints.push({
-            position: { lineNumber: r.endLineNumber, column: r.endColumn },
-            label: v.status === 'error' ? ` ⚠ ${text}` : ` = ${text}`,
-            paddingLeft: false,
-            tooltip: v.status === 'error' ? `Error: ${v.text}` : v.text,
-          });
-        }
-        return { hints, dispose() {} };
-      },
-    }),
+    monaco.languages.registerInlayHintsProvider('quarto', inlineValues),
   ];
   setChunkSource((doc) => {
     const m = monaco.editor.getModel(monaco.Uri.parse(doc));

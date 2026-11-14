@@ -1,0 +1,24 @@
+/* ---------------------------------------------------------------- update banner */
+.update-banner {
+  position: fixed;
+  z-index: 790;
+  top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 7px 8px 7px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-pane));
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  animation: fade 0.2s ease-out;
+}
+.update-banner > span {
+  min-width: 0;
+}

@@ -7,6 +7,7 @@ import { preview } from '../lib/render';
 import { downloadBlob, editor, writeWorkspaceFile } from '../lib/ide';
 import { kbd, toast } from '../lib/ui';
 import { Icon } from './Icon';
+import './Preview.css';
 
 const htmlName = (name: string) => name.replace(/\.(qmd|rmd)$/i, '') + '.html';
 const formatMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);

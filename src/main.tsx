@@ -1,6 +1,11 @@
 import { render } from 'solid-js/web';
-import './styles.css';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/controls.css';
+import './styles/shell.css';
 import { App } from './App';
+// Phone, narrow-width and late overrides: after every component's styles.
+import './styles/responsive.css';
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;

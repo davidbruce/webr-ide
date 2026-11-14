@@ -97,11 +97,33 @@ test('⌘/ toggles comments, ⌘⌥R sources a script', async ({ page }) => {
   await expect.poll(() => R(page, 'as.character(get0("ra_x", globalenv()))')).toEqual(['42']);
 });
 
-test('command palette and shortcut list open', async ({ page }) => {
-  await newFile(page, 'p.R', 'x <- 1\n');
+test('command palette: filter, keys, run, recently used; shortcut list', async ({ page }) => {
+  await newFile(page, 'p.R', '# Part ----\nx <- 1\n');
   await page.locator('button[title^="Command palette"]').click();
-  await page.keyboard.type('outline');
-  await expect(page.locator('.quick-input-list .monaco-list-row').first()).toContainText('Document Outline');
+  await expect(page.locator('.palette input')).toBeFocused();
+  // Words in any order; our commands show their shortcuts; Monaco's own are there too.
+  await page.keyboard.type('outline doc');
+  await expect(page.locator('.palette-item').first()).toContainText('Document Outline');
+  await expect(page.locator('.palette-item').first().locator('.palette-key')).toBeVisible();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('fold all');
+  await expect(page.locator('.palette-item', { hasText: 'Fold All' }).first()).toBeVisible();
+  // ↓ moves the highlight; Esc closes and the editor has focus again.
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.palette-item.active')).toHaveAttribute('data-i', '1');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette')).toHaveCount(0);
+  // Run one; it's listed first next time.
+  await page.locator('button[title^="Command palette"]').click();
+  await page.keyboard.type('document outline');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.outline-item').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.locator('button[title^="Command palette"]').click();
+  await expect(page.locator('.palette-group').first()).toHaveText('Recently used');
+  await expect(page.locator('.palette-item').first()).toContainText('Document Outline');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Alt+Shift+KeyK');
   await expect(page.locator('.dialog.shortcuts')).toBeVisible();
@@ -129,4 +151,23 @@ test('find in files, and replace in open and closed files', async ({ page }) => 
   await expect(page.locator('.editor-tab.dirty')).toContainText('use.R');
   const ws = await page.evaluate(() => window.__webrIde.ide.state.workspace);
   expect(await page.evaluate(([w]) => window.__webrIde.fs.readText(w, 'lib/helpers.R'), [ws])).toBe('sq <- function(x) x^2\n');
+});
+
+test('the data grid counts CSV rows the way CSV quoting works', async ({ page }) => {
+  // A stray quote in an unquoted field (an inch mark), an escaped quote and a
+  // line break inside a quoted field: 4 data rows.
+  await writeFile(page, 'quotes.csv', 'item,note\nruler,12" long\nbook,"said ""hi"""\nmap,"two\nlines"\npen,blue\n');
+  await page.evaluate(() => (window as any).__webrIde.editor().openFile('quotes.csv', { grid: true }));
+  await expect(page.locator('.grid-status')).toContainText('4 rows');
+  await expect(page.locator('.grid-row')).toHaveCount(4);
+  await expect(page.locator('.grid-row').nth(1)).toContainText('said "hi"');
+});
+
+test('sticky scroll pins the section and function you are in', async ({ page }) => {
+  const body = Array.from({ length: 40 }, (_, i) => `  y${i} <- x + ${i}`).join('\n');
+  await writeFile(page, 'st.R', `# Data ----\nx <- 1\n\nf <- function(x) {\n${body}\n}\n`);
+  await page.evaluate(() => (window as any).__webrIde.editor().openFile('st.R'));
+  await page.locator('.monaco-editor .view-lines').hover();
+  await page.mouse.wheel(0, 500);
+  await expect(page.locator('.sticky-widget .sticky-line-content')).toHaveText(['# Data ----', 'f <- function(x) {']);
 });

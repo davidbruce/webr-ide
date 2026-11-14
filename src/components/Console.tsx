@@ -1,6 +1,7 @@
 import { createEffect, getOwner, on, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
 import { settings } from '../lib/settings';
 import { WTerm } from '@wterm/dom';
+import './Console.css';
 import '@wterm/dom/css';
 import { session, state, completions, restartR, rDisplayPath, rRoot, editor, debugCommand, setDebugOnError, wdDisplay, wdInWorkspace } from '../lib/ide';
 import { flattenTree } from '../lib/opfs';
@@ -397,9 +398,9 @@ export function ConsolePane() {
   // Another workspace: a fresh console (as when RStudio opens another project).
   createEffect(
     on(
-      () => state.workspace,
-      (ws, prev) => {
-        if (prev && ws && ws !== prev) clear(`Workspace ${ws} · working directory ${rDisplayPath('').replace(/\/$/, '')}`);
+      () => state.workspaceOpens,
+      (n) => {
+        if (n > 1) clear(`Workspace ${state.workspace} · working directory ${rDisplayPath('').replace(/\/$/, '')}`);
       },
       { defer: true },
     ),

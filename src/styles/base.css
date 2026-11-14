@@ -1,0 +1,78 @@
+/* ------------------------------------------------------------------ base */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  font: 13px/1.4 var(--font-ui);
+  color: var(--text);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+#root {
+  height: var(--app-height);
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+input[type='text'],
+input[type='search'] {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  min-height: 28px;
+  outline: none;
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+@media (pointer: fine) {
+  input[type='text'],
+  input[type='search'] {
+    font-size: 13px;
+  }
+}
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.hidden {
+  display: none !important;
+}
+.scroll {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.muted {
+  color: var(--text-muted);
+}
+.icon {
+  flex: none;
+  display: block;
+}
+.r-icon {
+  color: var(--r-blue);
+}
+.folder-icon {
+  color: var(--folder);
+}
+.file-icon {
+  color: var(--text-muted);
+}

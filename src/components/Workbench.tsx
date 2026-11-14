@@ -5,6 +5,8 @@ import { KeyBar, DebugKeys, keyBarTarget, keyboardUp } from './KeyBar';
 import { RKeyboard } from './RKeyboard';
 import { rKeyboardActive } from '../lib/rkeyboard';
 import { EditorPane } from './Editor';
+import { CmEditorPane } from './cm/CmEditorPane';
+import { settings } from '../lib/settings';
 import { ConsolePane } from './Console';
 import { EnvPane } from './EnvPane';
 import { PlotsPane } from './PlotsPane';
@@ -12,6 +14,7 @@ import { Sidebar } from './Sidebar';
 import {
   sizes,
   setSizes,
+  saveSizes,
   DEFAULT_SIZES,
   panes,
   columnCollapsed,
@@ -19,12 +22,13 @@ import {
   focusPopped,
   popWindows,
   PANE_LABEL,
-  PANES,
 } from '../lib/layout';
 import type { PaneId } from '../lib/ide';
 
+// The editor is chosen once, at start-up (Settings → Editor reloads the page).
+const ENGINE = settings.editorEngine;
 const PANE_VIEW: Record<PaneId, () => JSX.Element> = {
-  script: () => <EditorPane />,
+  script: () => (ENGINE === 'codemirror' ? <CmEditorPane /> : <EditorPane />),
   console: () => <ConsolePane />,
   env: () => <EnvPane />,
   plots: () => <PlotsPane />,
@@ -55,16 +59,31 @@ function ColumnStrip(props: { panes: PaneId[]; side: 'left' | 'right' }) {
 
 
 
-export { resetLayout } from '../lib/layout';
-const layout = sizes;
-const setLayout = setSizes;
-const DEFAULT_LAYOUT = DEFAULT_SIZES;
+/** While dragging a splitter (saved when it's let go). */
+const resize = (patch: Parameters<typeof setSizes>[0]) => setSizes(patch, { save: false });
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** Pointer-driven splitter; works with mouse, pen and touch. */
 function Gutter(props: { hidden?: boolean; dir: 'col' | 'row'; onDrag: (clientX: number, clientY: number) => void; onReset?: () => void; label: string }) {
   const [active, setActive] = createSignal(false);
+  // At most one resize per frame (pointer events can come faster).
+  let frame = 0;
+  let last: [number, number] = [0, 0];
+  const drag = (x: number, y: number) => {
+    last = [x, y];
+    frame ||= requestAnimationFrame(() => {
+      frame = 0;
+      props.onDrag(...last);
+    });
+  };
+  const end = () => {
+    setActive(false);
+    cancelAnimationFrame(frame);
+    frame = 0;
+    document.body.classList.remove('resizing-col', 'resizing-row');
+    saveSizes();
+  };
   return (
     <div
       class={`gutter gutter-${props.dir}`}
@@ -79,17 +98,14 @@ function Gutter(props: { hidden?: boolean; dir: 'col' | 'row'; onDrag: (clientX:
         setActive(true);
         document.body.classList.add(props.dir === 'col' ? 'resizing-col' : 'resizing-row');
       }}
-      onPointerMove={(e) => active() && props.onDrag(e.clientX, e.clientY)}
+      onPointerMove={(e) => active() && drag(e.clientX, e.clientY)}
       onPointerUp={(e) => {
-        setActive(false);
+        if (active()) props.onDrag(e.clientX, e.clientY);
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-        document.body.classList.remove('resizing-col', 'resizing-row');
+        end();
         editor()?.layout();
       }}
-      onPointerCancel={() => {
-        setActive(false);
-        document.body.classList.remove('resizing-col', 'resizing-row');
-      }}
+      onPointerCancel={end}
     />
   );
 }
@@ -138,7 +154,7 @@ export function Workbench() {
     if (leftCollapsed() && rightCollapsed()) return { 'grid-template-columns': 'var(--strip-w) var(--strip-w)' };
     if (leftCollapsed()) return { 'grid-template-columns': 'var(--strip-w) minmax(0, 1fr)' };
     if (rightCollapsed()) return { 'grid-template-columns': 'minmax(0, 1fr) var(--strip-w)' };
-    const l = layout().left;
+    const l = sizes().left;
     return { 'grid-template-columns': `minmax(0, ${l}fr) var(--gutter) minmax(0, ${1 - l}fr)` };
   };
   const rowStyle = (frac: number, top: PaneId, bottom: PaneId) => {
@@ -178,7 +194,7 @@ export function Workbench() {
       <div
         class="sidebar-wrap"
         classList={{ open: sidebarShown() }}
-        style={{ width: narrow() ? undefined : `${layout().sidebar}px` }}
+        style={{ width: narrow() ? undefined : `${sizes().sidebar}px` }}
       >
         <Sidebar />
       </div>
@@ -186,8 +202,8 @@ export function Workbench() {
         <Gutter
           dir="col"
           label="Resize sidebar"
-          onDrag={(x) => setLayout({ sidebar: clamp(x - 4, 160, Math.min(480, window.innerWidth * 0.4)) })}
-          onReset={() => setLayout({ sidebar: DEFAULT_LAYOUT.sidebar })}
+          onDrag={(x) => resize({ sidebar: clamp(x - 4, 160, Math.min(480, window.innerWidth * 0.4)) })}
+          onReset={() => setSizes({ sidebar: DEFAULT_SIZES.sidebar })}
         />
       )}
       {state.sidebarOpen && narrow() && !phone() && <div class="sidebar-scrim" onClick={() => setState('sidebarOpen', false)} />}
@@ -196,7 +212,7 @@ export function Workbench() {
         <Show when={!z() && !codeTab() && leftCollapsed()}>
           <ColumnStrip panes={['script', 'console']} side="left" />
         </Show>
-        <div class="column" ref={leftCol} style={rowStyle(layout().leftTop, 'script', 'console')} classList={{ hidden: !leftVisible() || (!z() && leftCollapsed()) }}>
+        <div class="column" ref={leftCol} style={rowStyle(sizes().leftTop, 'script', 'console')} classList={{ hidden: !leftVisible() || (!z() && leftCollapsed()) }}>
           {quad('script')}
           <Gutter
             dir="row"
@@ -204,9 +220,9 @@ export function Workbench() {
             label="Resize script and console"
             onDrag={(_, y) => {
               const r = leftCol.getBoundingClientRect();
-              setLayout({ leftTop: clamp((y - r.top) / r.height, 0.12, 0.88) });
+              resize({ leftTop: clamp((y - r.top) / r.height, 0.12, 0.88) });
             }}
-            onReset={() => setLayout({ leftTop: DEFAULT_LAYOUT.leftTop })}
+            onReset={() => setSizes({ leftTop: DEFAULT_SIZES.leftTop })}
           />
           {quad('console')}
         </div>
@@ -216,11 +232,11 @@ export function Workbench() {
           label="Resize columns"
           onDrag={(x) => {
             const r = quadEl.getBoundingClientRect();
-            setLayout({ left: clamp((x - r.left) / r.width, 0.2, 0.8) });
+            resize({ left: clamp((x - r.left) / r.width, 0.2, 0.8) });
           }}
-          onReset={() => setLayout({ left: DEFAULT_LAYOUT.left })}
+          onReset={() => setSizes({ left: DEFAULT_SIZES.left })}
         />
-        <div class="column" ref={rightCol} style={rowStyle(layout().rightTop, 'env', 'plots')} classList={{ hidden: !rightVisible() || (!z() && rightCollapsed()) }}>
+        <div class="column" ref={rightCol} style={rowStyle(sizes().rightTop, 'env', 'plots')} classList={{ hidden: !rightVisible() || (!z() && rightCollapsed()) }}>
           {quad('env')}
           <Gutter
             dir="row"
@@ -228,9 +244,9 @@ export function Workbench() {
             label="Resize environment and plots"
             onDrag={(_, y) => {
               const r = rightCol.getBoundingClientRect();
-              setLayout({ rightTop: clamp((y - r.top) / r.height, 0.12, 0.88) });
+              resize({ rightTop: clamp((y - r.top) / r.height, 0.12, 0.88) });
             }}
-            onReset={() => setLayout({ rightTop: DEFAULT_LAYOUT.rightTop })}
+            onReset={() => setSizes({ rightTop: DEFAULT_SIZES.rightTop })}
           />
           {quad('plots')}
         </div>

@@ -33,7 +33,10 @@ export function handleDriveFetch(event: FetchEvent): boolean {
   const m = /^([^/]+)\/api\/(drive|drive-raw)$/.exec(url.pathname.slice(prefix.length));
   if (!m) return false;
   const ws = decodeURIComponent(m[1]);
-  event.respondWith(m[2] === 'drive' ? handleJson(event.request, ws) : handleRaw(event.request, ws, url));
+  const response = m[2] === 'drive' ? handleJson(event.request, ws) : handleRaw(event.request, ws, url);
+  event.respondWith(response);
+  // Keep the worker alive until the change notice (if any) has gone out.
+  event.waitUntil(response.then(() => flushing ?? undefined, () => flushing ?? undefined));
   return true;
 }
 
@@ -84,6 +87,32 @@ async function writeBytes(ws: string, path: string, bytes: Uint8Array) {
   await w.close();
 }
 
+async function childOf(dir: FileSystemDirectoryHandle, name: string): Promise<Entry | null> {
+  for (const get of [() => dir.getFileHandle(name), () => dir.getDirectoryHandle(name)]) {
+    try {
+      return await get();
+    } catch {
+      /* not this kind */
+    }
+  }
+  return null;
+}
+
+/** Move an entry (FileSystemHandle.move where supported, else copy and delete). */
+async function moveEntry(src: Entry, srcDir: FileSystemDirectoryHandle, srcName: string, dst: FileSystemDirectoryHandle, name: string) {
+  const move = (src as Entry & { move?: (dir: FileSystemDirectoryHandle, name: string) => Promise<void> }).move;
+  if (typeof move === 'function') {
+    try {
+      await move.call(src, dst, name);
+      return;
+    } catch {
+      /* fall back to copy */
+    }
+  }
+  await copyInto(src, dst, name);
+  await srcDir.removeEntry(srcName, { recursive: true });
+}
+
 async function copyInto(src: Entry, dst: FileSystemDirectoryHandle, name: string) {
   if (src.kind === 'file') {
     const fh = await dst.getFileHandle(name, { create: true });
@@ -111,24 +140,24 @@ function fromBase64(b64: string) {
 // ---------------------------------------------------------------- change notifications
 
 const pendingChanges = new Map<string, { changed: Set<string>; deleted: Set<string> }>();
-let flushQueued = false;
+/** The pending batch's delivery; fetch events wait for it so Safari doesn't stop the worker first. */
+let flushing: Promise<void> | null = null;
 
 function noteChange(ws: string, path: string, deleted = false) {
   let p = pendingChanges.get(ws);
   if (!p) pendingChanges.set(ws, (p = { changed: new Set(), deleted: new Set() }));
   const rel = segs(path).join('/');
   (deleted ? p.deleted : p.changed).add(rel);
-  if (flushQueued) return;
-  flushQueued = true;
-  setTimeout(async () => {
-    flushQueued = false;
+  if (flushing) return;
+  flushing = new Promise<void>((resolve) => setTimeout(resolve, 100)).then(async () => {
+    flushing = null;
     const batch = [...pendingChanges.entries()];
     pendingChanges.clear();
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const [ws, { changed, deleted }] of batch) {
       for (const c of clients) c.postMessage({ type: 'drive-changed', ws, changed: [...changed], deleted: [...deleted] });
     }
-  }, 100);
+  });
 }
 
 // ---------------------------------------------------------------- lazy-reader tracking
@@ -195,27 +224,21 @@ async function op(ws: string, req: { method: string; path: string; data?: any })
       return null;
     }
     case 'rename': {
+      if (segs(path).join('/') === segs(data.newPath).join('/')) return null; // onto itself: nothing to do
       const from = await resolve(ws, path);
       if (!from.handle || !from.dir) throw new Error('ENOENT');
       const { dir: dst, name: newName } = await parentDir(ws, data.newPath, true);
+      // An existing destination is set aside, not deleted, until the move has worked.
+      const existing = await childOf(dst, newName);
+      const asideName = `.${newName}.replaced-${Date.now()}`;
+      if (existing) await moveEntry(existing, dst, newName, dst, asideName);
       try {
-        await dst.removeEntry(newName, { recursive: true });
-      } catch {
-        /* nothing to replace */
+        await moveEntry(from.handle, from.dir, from.name, dst, newName);
+      } catch (e) {
+        if (existing) await moveEntry((await childOf(dst, asideName))!, dst, asideName, dst, newName).catch(() => {});
+        throw e;
       }
-      let moved = false;
-      if (typeof (from.handle as any).move === 'function') {
-        try {
-          await (from.handle as any).move(dst, newName);
-          moved = true;
-        } catch {
-          /* fall back to copy */
-        }
-      }
-      if (!moved) {
-        await copyInto(from.handle, dst, newName);
-        await from.dir.removeEntry(from.name, { recursive: true });
-      }
+      if (existing) await dst.removeEntry(asideName, { recursive: true }).catch(() => {});
       noteChange(ws, path, true);
       noteChange(ws, data.newPath);
       return null;

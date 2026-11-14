@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { state, setState, refreshEnv, strOf, session, saveEnvironmentImage, clearHistory, editor, EnvEntry, loadDebugFrame } from '../lib/ide';
-import { confirmDialog, kbd, isMac } from '../lib/ui';
+import { confirmDialog, isMac } from '../lib/ui';
 import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
+import './EnvPane.css';
 
 export function EnvPane() {
   return (
@@ -30,18 +31,23 @@ function EnvironmentView() {
 
   // Paused in the debugger: the selected frame's variables.
   const entries = () => (state.debug ? state.debugEnv : state.env);
-  const groups = createMemo(() => {
-    const f = filter().toLowerCase();
-    const items = entries().filter((e) => !f || e.name.toLowerCase().includes(f));
-    return (['Data', 'Values', 'Functions'] as const)
-      .map((g) => ({ group: g, items: items.filter((e) => e.group === g) }))
-      .filter((g) => g.items.length);
-  });
+  // One list per group, of the store's own entries (kept by name when the
+  // environment refreshes), so rows that didn't change aren't re-created.
+  const GROUPS = ['Data', 'Values', 'Functions'] as const;
+  const groupItems = Object.fromEntries(
+    GROUPS.map((g) => [
+      g,
+      createMemo(() => {
+        const f = filter().toLowerCase();
+        return entries().filter((e) => e.group === g && (!f || e.name.toLowerCase().includes(f)));
+      }),
+    ]),
+  ) as Record<(typeof GROUPS)[number], () => EnvEntry[]>;
 
   // Refresh any expanded str() views when the environment changes.
   createEffect(
     on(
-      entries,
+      () => entries().map((e) => `${e.name}\u0000${e.value}\u0000${e.size}`).join('\u0001'),
       async () => {
         const cur = expanded();
         const names = Object.keys(cur).filter((k) => cur[k]);
@@ -116,13 +122,14 @@ function EnvironmentView() {
               <col style={{ width: '38%' }} />
               <col />
             </colgroup>
-            <For each={groups()}>
+            <For each={GROUPS}>
               {(g) => (
+                <Show when={groupItems[g]().length}>
                 <tbody>
                   <tr class="env-group">
-                    <th colSpan={2}>{g.group}</th>
+                    <th colSpan={2}>{g}</th>
                   </tr>
-                  <For each={g.items}>
+                  <For each={groupItems[g]()}>
                     {(e) => (
                       <>
                         <tr class="env-row" classList={{ open: !!expanded()[e.name] }}>
@@ -156,6 +163,7 @@ function EnvironmentView() {
                     )}
                   </For>
                 </tbody>
+                </Show>
               )}
             </For>
           </table>

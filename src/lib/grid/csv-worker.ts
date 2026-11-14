@@ -92,17 +92,38 @@ async function open(f: File | Blob, name: string, header: boolean) {
   });
   post({ type: 'meta', columns, numeric, delimiter: delim, size: f.size });
 
-  // Index row starts.
+  // Index row starts. Quotes follow parseRecords' rules: a quote opens a field
+  // only at its start ("" inside it is an escaped quote), so a stray quote in
+  // an unquoted field (12" ruler) doesn't swallow the rest of the file.
   pushOffset(0);
-  let inQuote = false;
+  const FIELD_START = 0, UNQUOTED = 1, QUOTED = 2, QUOTE_IN_QUOTED = 3;
+  const d = delim.charCodeAt(0);
+  let st = FIELD_START;
   let lastReport = 0;
   for (let pos = 0; pos < f.size; pos += CHUNK) {
     if (gen !== generation) return;
     const bytes = new Uint8Array(await f.slice(pos, Math.min(f.size, pos + CHUNK)).arrayBuffer());
     for (let i = 0; i < bytes.length; i++) {
       const b = bytes[i];
-      if (b === 34) inQuote = !inQuote;
-      else if (b === 10 && !inQuote) pushOffset(pos + i + 1);
+      if (st === QUOTED) {
+        if (b === 34) st = QUOTE_IN_QUOTED;
+        continue;
+      }
+      if (st === QUOTE_IN_QUOTED) {
+        if (b === 34) {
+          st = QUOTED; // ""
+          continue;
+        }
+        st = UNQUOTED; // the closing quote; this byte is outside it
+      } else if (st === FIELD_START && b === 34) {
+        st = QUOTED;
+        continue;
+      }
+      if (b === 10) {
+        pushOffset(pos + i + 1);
+        st = FIELD_START;
+      } else if (b === d) st = FIELD_START;
+      else if (b !== 13) st = UNQUOTED;
     }
     const now = performance.now();
     if (now - lastReport > 150) {

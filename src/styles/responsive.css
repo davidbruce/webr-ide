@@ -1,0 +1,224 @@
+/* ------------------------------------------------------------------ responsive */
+@media (max-width: 1000px) {
+  .hide-narrow {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .brand-name {
+    display: none;
+  }
+}
+
+/* Drop toolbar button labels (keeping icons) when a pane gets narrow. */
+.pane {
+  container-type: inline-size;
+}
+@container (max-width: 470px) {
+  .pane-toolbar .tb-btn.labeled:not(.run) span {
+    display: none;
+  }
+  .env-scope {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- phone layout */
+
+.workbench.phone {
+  padding: 4px 4px 0;
+}
+.workbench.phone .pane-zoom,
+.workbench.phone .gutter {
+  display: none;
+}
+/* Files tab: the sidebar fills the screen instead of the panes. */
+.workbench.phone .sidebar-wrap {
+  position: static;
+  flex: 1;
+  width: auto;
+  box-shadow: none;
+}
+.workbench.phone-files .quadrants {
+  display: none;
+}
+.workbench.phone .pane-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workbench.phone .pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+  .topbar .sidebar-toggle,
+  .topbar .brand,
+  .topbar .brand + .tb-sep {
+    display: none;
+  }
+  .topbar .tb-btn.labeled > span {
+    display: none;
+  }
+  .topbar .ws-name {
+    max-width: 9ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+.phone-tabs {
+  flex: none;
+  display: flex;
+  justify-content: space-around;
+  padding: 2px 4px max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-topbar);
+}
+.phone-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.phone-tab.active {
+  color: var(--accent);
+}
+.phone-tab-icon {
+  position: relative;
+  display: inline-flex;
+}
+.phone-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phone-badge {
+  position: absolute;
+  top: -2px;
+  right: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--bg-topbar);
+}
+.keyboard-open .phone-tabs {
+  display: none;
+}
+/* Landscape phones: a slimmer bar. */
+@media (max-height: 500px) and (pointer: coarse) {
+  .phone-tab {
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 4px 2px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+  /* Top bar: status as a dot only, and a shorter workspace button. */
+  .topbar .r-status > span:not(.dot) {
+    display: none;
+  }
+  .topbar .r-status {
+    padding: 0 8px;
+  }
+  .topbar .ws-btn {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .topbar {
+    gap: 2px;
+  }
+}
+/* Phones: toolbars scroll sideways instead of spilling over. */
+.workbench.phone .pane-toolbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workbench.phone .pane-toolbar::-webkit-scrollbar {
+  display: none;
+}
+.workbench.phone .pane-toolbar > * {
+  flex-shrink: 0;
+}
+@container (max-width: 420px) {
+  .pane-toolbar .tb-btn.labeled.run span {
+    display: none;
+  }
+}
+
+/* iOS Safari zooms the page when a text field under 16px gets focus. Keep
+   every text field (including Monaco's and the console's hidden ones, which
+   receive the typing) at 16px on touch screens. The hidden ones are
+   invisible, so only visible inputs change size. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  textarea,
+  select,
+  .monaco-editor textarea.inputarea,
+  .monaco-editor .native-edit-context {
+    font-size: 16px !important;
+  }
+}
+
+.phone-tabs {
+  height: calc(54px + max(4px, env(safe-area-inset-bottom)));
+  box-sizing: border-box;
+}
+
+@media (max-height: 500px) and (pointer: coarse) {
+  .keybar,
+  .phone-tabs {
+    height: calc(42px + max(2px, env(safe-area-inset-bottom)));
+  }
+}
+
+/* While the R keyboard is in use, pin Monaco's hidden text area to the
+   editor's top-left corner instead of following the cursor. iOS Safari
+   scrolls the page to keep a focused text field in view; as the cursor moved
+   along a line, that could nudge the whole page (and the keyboard) up between
+   taps, so a tap landed on the key below. Monaco only needs the text area at
+   the cursor for the system keyboard's input pop-ups, which aren't used here. */
+.rk-active .monaco-editor textarea.inputarea,
+.rk-active .monaco-editor .native-edit-context {
+  top: 0 !important;
+  left: 0 !important;
+}
+
+/* Questions (confirm, rename, …) open above other dialogs such as Settings. */
+.modal-backdrop.prompt-backdrop {
+  z-index: 300;
+}
+
+/* Narrow panes: the tab strip scrolls sideways instead of hiding tabs under
+   the pane's buttons. */
+.pane-tabs {
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+.pane-tab {
+  flex: none;
+}
+.pane-actions {
+  flex: none;
+}
+/* Stacked (iPad split view): the script/console splitter stays, to resize. */
+.workbench.phone.stacked .column > .gutter-row:not(.hidden) {
+  display: block;
+}

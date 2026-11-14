@@ -1,0 +1,37 @@
+.install-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg-pane) 72%, transparent);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  cursor: progress;
+  animation: fade 0.2s ease-out;
+}
+.install-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 420px;
+  padding: 14px 18px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.install-title {
+  font-weight: 600;
+}
+.install-ver {
+  font: 12px var(--font-mono);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.install-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

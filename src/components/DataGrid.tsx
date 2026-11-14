@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, Index, JSX, on, onCleanup, onMo
 import type { Filter, GridRow, GridSource, SortSpec } from '../lib/grid/source';
 import { Icon } from './Icon';
 import { toast } from '../lib/ui';
+import './DataGrid.css';
 
 const BLOCK = 100;
 const MAX_BLOCKS = 80;

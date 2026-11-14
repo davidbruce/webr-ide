@@ -1,0 +1,321 @@
+/* ------------------------------------------------------------------ buttons */
+.tb-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: var(--btn-size);
+  height: var(--btn-size);
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+.tb-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-soft);
+}
+.tb-btn:active:not(:disabled),
+.tb-btn.active {
+  background: var(--bg-active);
+}
+.tb-btn:disabled {
+  opacity: 0.4;
+}
+.tb-btn.labeled {
+  padding: 0 9px;
+}
+.tb-btn.run {
+  color: var(--ok);
+}
+.tb-btn.run span {
+  color: var(--text);
+}
+.tb-btn.danger {
+  color: var(--danger);
+}
+.tb-btn.tiny {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 3px;
+}
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+.tb-spacer {
+  flex: 1;
+}
+.btn {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-pane);
+  font-weight: 500;
+}
+.btn:hover {
+  background: var(--bg-hover);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.btn.primary:hover {
+  filter: brightness(1.07);
+}
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+button.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  text-align: left;
+}
+button.link:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ menus */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.menu {
+  position: fixed;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 5px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  animation: pop 0.12s ease-out;
+}
+.ws-menu {
+  min-width: 240px;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.menu-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-scroll {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .menu-item {
+    min-height: 42px;
+  }
+}
+.menu-item:hover {
+  background: var(--bg-hover);
+}
+.menu-item.current {
+  font-weight: 600;
+}
+.menu-item.danger {
+  color: var(--danger);
+}
+.menu-check {
+  width: 16px;
+  color: var(--accent);
+}
+.menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-soft);
+}
+.menu-foot {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-soft);
+  margin-top: 5px;
+}
+
+/* ------------------------------------------------------------------ modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: var(--scrim);
+  animation: fade 0.15s ease-out;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.dialog {
+  width: min(440px, 100%);
+  padding: 18px 20px 16px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.dialog p {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  /* Line breaks in messages (lists) are kept. */
+  white-space: pre-line;
+}
+.dialog input {
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.plot-modal,
+.data-viewer {
+  outline: none;
+  width: min(1400px, 100%);
+  height: min(1000px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.plot-modal-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 4px 8px 4px 12px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+}
+.close-btn {
+  margin-left: 4px;
+}
+.plot-modal-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--bg-toolbar);
+}
+
+/* ------------------------------------------------------------------ toasts / fatal */
+.toasts {
+  position: fixed;
+  z-index: 300;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  max-width: min(560px, 90vw);
+  padding: 9px 16px;
+  border-radius: 8px;
+  background: #26303b;
+  color: #fff;
+  box-shadow: var(--shadow);
+  animation: pop 0.15s ease-out;
+}
+.toast.warn {
+  background: #8a5a00;
+}
+.toast.error {
+  background: #a3261f;
+}
+.fatal {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 24px;
+  text-align: center;
+}
+
+/* Confirmation/prompt dialogs sit above other modals (e.g. the package browser). */
+.modal-backdrop.dialog-backdrop {
+  z-index: 260;
+}
+
+/* ------------------------------------------------------------------ install progress */
+.spinner {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+.spinner.small {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}

@@ -5,7 +5,7 @@
 // the workspace, so it survives reloads.
 
 import { createStore, produce } from 'solid-js/store';
-import { session } from './ide';
+import { session } from './ide-state';
 import { toast } from './ui';
 import * as fs from './opfs';
 import { parseManifest, widgetPage } from './html-page';
