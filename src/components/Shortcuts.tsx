@@ -30,6 +30,7 @@ const GROUPS: [string, [string, string][]][] = [
       ['mod+F', 'Find / replace in the file'],
       ['mod+shift+F', 'Find in files'],
       ['mod+S', 'Save'],
+      ['Tab', 'After a snippet name (fun, for, if, lib…): insert the snippet'],
     ],
   ],
   [

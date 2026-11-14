@@ -43,3 +43,20 @@ test('a new version shows a banner, and Reload switches to it', async ({ page })
     writeFileSync(SW, original);
   }
 });
+
+test('offline, a pane still opens in its own window (popout.html from the service worker)', async ({ page, context }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.waitForTimeout(3000);
+  await context.setOffline(true);
+  await page.reload();
+  await ready(page);
+  await page.locator('.quadrant[aria-label="Plots"] .pane-menu-btn').click();
+  const [popup] = await Promise.all([page.waitForEvent('popup'), page.locator('.pane-menu .lm-popout').click()]);
+  expect(popup.url()).toMatch(/\/popout\.html\?pane=plots$/);
+  await expect(popup.locator('.popout-root .pane-tab.active')).toHaveText('Plots');
+  expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
+  await popup.close();
+  await expect(page.locator('.quadrant[aria-label="Plots"]')).not.toHaveClass(/hidden/);
+  await context.setOffline(false);
+});

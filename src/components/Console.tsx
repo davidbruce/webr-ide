@@ -1,8 +1,8 @@
-import { createEffect, getOwner, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
+import { createEffect, getOwner, on, onCleanup, onMount, runWithOwner, Show } from 'solid-js';
 import { settings } from '../lib/settings';
 import { WTerm } from '@wterm/dom';
 import '@wterm/dom/css';
-import { session, state, completions, restartR, rDisplayPath, rRoot, editor, debugCommand, setDebugOnError } from '../lib/ide';
+import { session, state, completions, restartR, rDisplayPath, rRoot, editor, debugCommand, setDebugOnError, wdDisplay, wdInWorkspace } from '../lib/ide';
 import { flattenTree } from '../lib/opfs';
 import { Icon } from './Icon';
 import { confirmDialog, kbd } from '../lib/ui';
@@ -386,12 +386,24 @@ export function ConsolePane() {
     }
   }
 
-  function clear() {
+  function clear(notice = '') {
     flushNow();
     write('\x1b[2J\x1b[3J\x1b[H');
+    if (notice) write(`${DIM}${notice}${RESET}\r\n`);
     drawnRow = 0;
     drawLine();
   }
+
+  // Another workspace: a fresh console (as when RStudio opens another project).
+  createEffect(
+    on(
+      () => state.workspace,
+      (ws, prev) => {
+        if (prev && ws && ws !== prev) clear(`Workspace ${ws} · working directory ${rDisplayPath('').replace(/\/$/, '')}`);
+      },
+      { defer: true },
+    ),
+  );
 
   // Keep R's width in step while hidden (e.g. a phone rotating).
   const onWinResize = () => {
@@ -454,7 +466,7 @@ export function ConsolePane() {
 
     consoleApi = {
       focus: () => term?.focus(),
-      clear,
+      clear: () => clear(),
       insert: (text) => {
         if (prompt !== null) setBuf(text);
         else buf = text;
@@ -496,8 +508,16 @@ export function ConsolePane() {
         tabs={[{ id: 'console', label: 'Console', icon: 'to-console' }]}
         active="console"
         info={
-          <span class="pane-path" title="Working directory">
-            {state.workspace ? rDisplayPath('').replace(/\/$/, '') : ''}
+          <span
+            class="pane-path"
+            classList={{ outside: !!state.rWd && !wdInWorkspace() }}
+            title={
+              state.rWd && !wdInWorkspace()
+                ? `Working directory: ${state.rWd}\nOutside this workspace: files written here aren't saved.`
+                : `Working directory: ${state.rWd}`
+            }
+          >
+            {state.rWd ? wdDisplay() : state.workspace ? rDisplayPath('').replace(/\/$/, '') : ''}
           </span>
         }
         actions={

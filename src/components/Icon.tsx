@@ -92,6 +92,21 @@ const paths: Record<string, JSX.Element> = {
   ),
   expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
   maximize: <rect x="4" y="4" width="16" height="16" rx="2" />,
+  minimize: <path d="M6 17h12" />,
+  'pane-layout': (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M12 4v16M12 12h8" />
+    </>
+  ),
+  'expand-v': <path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4" />,
+  'expand-h': <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />,
+  'new-window': (
+    <>
+      <rect x="4" y="7" width="13" height="13" rx="2" />
+      <path d="M10 4h10v10M20 4l-8 8" />
+    </>
+  ),
   restore: (
     <>
       <rect x="4" y="8" width="12" height="12" rx="2" />

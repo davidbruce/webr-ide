@@ -27,6 +27,8 @@ import { PaneHeader } from './Pane';
 import { consoleApi } from './Console';
 import { outline, rRegions, styleCode, findDefinitions, symbolAt, type OutlineItem, type DefinitionHit } from '../lib/language';
 import { PKG_TOOLS } from '../lib/packages';
+import { openHelp } from '../lib/help';
+import { expandSnippet, snippetAtCursor, saveSnippets, loadSnippets, editSnippets } from '../lib/snippets';
 import { openShortcuts } from './Shortcuts';
 import { openFindInFiles } from './SearchPanel';
 import { desktopEditing } from '../lib/input-mode';
@@ -48,6 +50,8 @@ interface Tab {
   fileVersion: number; // bumped when the file changes on disk, to reload the grid
   /** Read-only view of a paused function that has no file (closed when debugging ends). */
   debugView?: boolean;
+  /** A file in the app's storage, not the workspace (path is null). */
+  appFile?: string;
 }
 
 export function EditorPane() {
@@ -127,6 +131,14 @@ export function EditorPane() {
     activate(key);
   }
 
+  function openAppFile(appFile: string, name: string, text: string) {
+    const existing = tabs.list.find((t) => t.appFile === appFile);
+    if (existing) return activate(existing.key);
+    const { key, language } = createModel(text, name);
+    setTabs('list', (l) => [...l, { key, path: null, appFile, name, dirty: false, language, mode: 'text', gridOnly: false, fileVersion: 0 }]);
+    activate(key);
+  }
+
   function newFile(name?: string, content = '') {
     const n = name ?? `Untitled${++untitledSeq}.R`;
     const { key, language } = createModel(content, n);
@@ -138,6 +150,19 @@ export function EditorPane() {
     const tab = tabs.list.find((t) => t.key === key);
     const model = models.get(key);
     if (!tab || !model) return false;
+    if (tab.appFile) {
+      try {
+        const version = model.getAlternativeVersionId();
+        if (tab.appFile === 'snippets/r.snippets') await saveSnippets(model.getValue());
+        else await fs.writeAppFile(tab.appFile, model.getValue());
+        savedVersion.set(key, version);
+        setTabs('list', (t) => t.key === key, 'dirty', model.getAlternativeVersionId() !== version);
+        return true;
+      } catch (e) {
+        toast(`Couldn't save ${tab.name}: ${e}`, 'error');
+        return false;
+      }
+    }
     let path = tab.path;
     if (!path) {
       const base = state.selectedPath && state.tree.length ? selectedFolder() : '';
@@ -528,7 +553,7 @@ export function EditorPane() {
   function showHelp(name: string) {
     if (session.status !== 'ready') return toast('R is still starting…', 'warn');
     const [pkg, topic] = name.includes('::') ? name.split(/:::?/) : [null, name];
-    session.submit(`help(${rString(topic)}${pkg ? `, package = ${rString(pkg)}` : ''})`);
+    void openHelp(topic, pkg ?? '');
   }
 
   async function goToDefinition() {
@@ -701,6 +726,10 @@ export function EditorPane() {
       await openFile(path, opts);
       showPane('script');
     },
+    async openAppFile(appFile, name, text) {
+      openAppFile(appFile, name, text);
+      showPane('script');
+    },
     newFile(name, content) {
       newFile(name, content);
       showPane('script');
@@ -806,7 +835,10 @@ export function EditorPane() {
           break;
         }
         case 'tab':
-          go(suggesting() ? 'acceptSelectedSuggestion' : 'tab');
+          // Like the Tab key: within a snippet, the next placeholder; else expand a snippet name.
+          if ((ed as any)._contextKeyService?.getContextKeyValue?.('hasNextTabstop')) go(suggesting() ? 'acceptSelectedSuggestion' : 'jumpToNextSnippetPlaceholder');
+          else if (expandSnippet(ed)) go('hideSuggestWidget');
+          else go(suggesting() ? 'acceptSelectedSuggestion' : 'tab');
           break;
         case 'type':
           go('type', { text: action.text });
@@ -869,6 +901,18 @@ export function EditorPane() {
     const K = monaco.KeyMod;
     const C = monaco.KeyCode;
     notebook = attachNotebook(ed);
+    // Tab after a snippet's name expands it (also with the completion list open).
+    const snippetKey = ed.createContextKey<boolean>('rSnippetAtCursor', false);
+    ed.onDidChangeCursorSelection(() => snippetKey.set(snippetAtCursor(ed)));
+    ed.onDidChangeModel(() => void loadSnippets().then(() => snippetKey.set(snippetAtCursor(ed))));
+    ed.addCommand(
+      C.Tab,
+      () => {
+        if (expandSnippet(ed)) ed.trigger('snippet', 'hideSuggestWidget', null);
+        else ed.trigger('keyboard', 'tab', null);
+      },
+      'rSnippetAtCursor && editorTextFocus && !inSnippetMode && !editorReadonly',
+    );
     bpDecos = ed.createDecorationsCollection();
     debugDecos = ed.createDecorationsCollection();
     // Breakpoints: click the margin (or, on touch screens, a line number).
@@ -972,6 +1016,7 @@ export function EditorPane() {
     action('r.settings', 'Settings…', [K.CtrlCmd | C.Comma], openSettings);
     action('r.renv', 'Check renv.lock Compatibility', [], () => void checkRenv());
     action('r.renvWrite', 'Write renv.lock (for renv::restore() on desktop)', [], () => void writeRenvLock());
+    action('r.snippets', 'Edit Code Snippets…', [], () => void editSnippets());
     action('r.palette', 'Command Palette', [K.CtrlCmd | K.Shift | C.KeyP], palette);
     // F1 is R help here (as in RStudio); the palette is ⌘⇧P.
     monaco.editor.addKeybindingRule({ keybinding: C.F1, command: '-editor.action.quickCommand' });

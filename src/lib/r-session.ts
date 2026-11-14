@@ -2,6 +2,7 @@ import { WebR, ChannelType } from 'webr';
 import { R_HELPERS } from './r-helpers';
 import { R_NOTEBOOK } from './r-notebook';
 import { R_INTEL } from './r-intel';
+import { R_HELP } from './r-help';
 import { setBoot } from './boot';
 import { WEBR_BASE_URL, mountBaseLibrary } from './webr-runtime';
 
@@ -15,6 +16,8 @@ export type SessionEvent =
   | { type: 'canvasNewPage' }
   | { type: 'canvasImage'; image: ImageBitmap }
   | { type: 'pager'; title: string; text: string }
+  | { type: 'help'; page: { title: string; html: string; pkg: string; topic: string } }
+  | { type: 'helpFile'; path: string; title: string }
   | { type: 'view'; title: string; data: Record<string, unknown[]> }
   | { type: 'status'; status: SessionStatus; detail?: string }
   | { type: 'submitted'; line: string; history?: boolean }
@@ -116,6 +119,7 @@ export class RSession {
       await this.webR.evalRVoid(R_HELPERS);
       await this.webR.evalRVoid(R_NOTEBOOK);
       await this.webR.evalRVoid(R_INTEL);
+      await this.webR.evalRVoid(R_HELP);
       await this.setPlotSize(plotSize.width, plotSize.height);
       setBoot({ label: 'Setting up the R session' });
       if (onInit) {
@@ -274,8 +278,17 @@ export class RSession {
     try {
       const bytes = await this.webR.FS.readFile(data.path);
       // R's text help uses backspace overstrike for bold/underline.
-      const text = new TextDecoder().decode(bytes).replace(/.\x08/g, '');
-      this.emit({ type: 'pager', title: data.title || data.header || 'Help', text });
+      const raw = new TextDecoder().decode(bytes);
+      if (raw.startsWith('\x01ide-help\x01\n')) {
+        const [, pkg, topic, title, ...html] = raw.split('\n');
+        this.emit({ type: 'help', page: { pkg, topic, title, html: html.join('\n') } });
+      } else if (raw.startsWith('\x01ide-file\x01\n')) {
+        const [, path, title] = raw.split('\n');
+        this.emit({ type: 'helpFile', path, title });
+      } else {
+        const text = raw.replace(/.\x08/g, '');
+        this.emit({ type: 'pager', title: data.title || data.header || 'Help', text });
+      }
       if (data.deleteFile) await this.webR.FS.unlink(data.path);
     } catch (e) {
       console.warn('pager failed', e);
@@ -380,6 +393,10 @@ export class RSession {
 
   async strings(code: string): Promise<string[]> {
     return (await this.webR.evalRRaw(code, 'string[]')) ?? [];
+  }
+
+  async readFile(path: string): Promise<Uint8Array> {
+    return await this.webR.FS.readFile(path);
   }
 
   async evalVoid(code: string): Promise<void> {

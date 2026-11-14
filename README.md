@@ -10,11 +10,12 @@ An RStudio-style IDE for [webR](https://github.com/r-wasm/webr) (R compiled to W
 - **Formatting:** ⌘⇧A reformats the selection, script or chunk with [styler](https://styler.r-lib.org) (installed on first use), ⌘I reindents, ⌘/ (or RStudio's ⌘⇧C) comments or uncomments lines
 - **Find in files:** the sidebar's **Search** tab (⌘⇧F) searches the workspace, including unsaved tabs, with match case, whole word and regex, and replaces in one file or all
 - **Command palette and shortcuts:** ⌘ button or ⌘⇧P for every IDE command; ⌥⇧K (or the workspace menu) lists the shortcuts
-- **Console:** [wterm](https://wterm.dev/) terminal with line editing, history, Tab completion, and Ctrl+C to interrupt. File locations in errors, such as `(from analysis.R#12)` or `analysis.R:3:5`, are underlined; tap one to open the file at that line
+- **Console:** [wterm](https://wterm.dev/) terminal with line editing, history, Tab completion, and Ctrl+C to interrupt. File locations in errors, such as `(from analysis.R#12)` or `analysis.R:3:5`, are underlined; tap one to open the file at that line. The header shows R's working directory (`getwd()`), in orange when it's outside the workspace, where files aren't saved. Switching workspaces starts a fresh console
 - **Environment / History:** objects grouped as Data, Values, and Functions; expandable `str()` views; `View()` data viewer; command history with *To Console* and *To Source*
-- **Plots / Packages / Help:** plot history, an **Expand** button that re-renders the plot full size in a closable window, PNG save and download, package install and attach, and R help pages
+- **Plots / Packages / Help:** plot history, an **Expand** button that re-renders the plot full size in a closable window, PNG save and download, package install and attach, and R help pages as formatted HTML: links between pages, back and forward, a package's index of help pages and vignettes, highlighted examples with **Run examples** and Copy buttons, maths typeset with KaTeX, and a topic search box (`stats::sd`, `??regression`). `?topic`, `help(package = )`, `vignette()` and F1 in the editor all open here
 - **Files sidebar:** create, rename, delete, upload, download, and drag-and-drop; import CSV files; source scripts
 - **Workspaces:** each workspace has its own files, history, open tabs, and saved environment (`.RData`). **Export as .zip** (workspace menu) downloads all of it; **Import from .zip** makes a new workspace from one, for backups or moving to another device
+- **Code snippets:** type a snippet's name and press Tab: `fun`, `for`, `if`, `el`, `ei`, `while`, `switch`, `tryc`, `lib`, `src`, `ret`, `mat`, the apply family, `df`, `sec`, and `ts` (a timestamp comment). Tab moves between the placeholders. Snippets also appear in the suggestion list and work in Quarto R chunks. Edit them, or add your own, with **Edit Code Snippets** (command palette or Settings). There's one set for all workspaces, kept in the browser's storage, in RStudio's `r.snippets` format, so you can paste in snippets from RStudio, including `` `r expr` `` parts that R fills in when the snippet is inserted
 - **Settings** (⌘, or the workspace menu): theme, editor and console font size, tab width, line wrapping, help on hover, the code checks, and the R keyboard on phones
 - **Per-workspace options** (Settings → *This workspace*, stored in the workspace's `.ide/` folder so they travel with a zip export):
   - **Tab width** for this workspace, overriding your default.
@@ -180,7 +181,16 @@ The same shortcuts work on all platforms: ⌘ on Mac and iPad keyboards is Ctrl 
 
 ¹ Most Windows/Linux browsers keep Ctrl+1–8 for switching tabs, so Ctrl+2 may switch tabs instead. Click the console to focus it.
 
-Double-click (or double-tap) a pane header, or use its □ button, to zoom that pane. Drag the gutters to resize panes; double-click a gutter to reset it.
+Double-click (or double-tap) a pane header, or use its □ button, to maximize that pane. Drag the gutters to resize panes; double-click a gutter to reset it.
+
+Each pane header also has **–** (minimize) and a layout menu (⌄):
+
+- **Minimize** shrinks a pane to its header; the other pane in its column takes the height. Tap one of its tabs, or the restore button, to bring it back. With both panes of a column minimized, the column becomes a thin strip of labels and the other column takes the full width. The script comes first: minimizing everything else gives it the space, and minimizing the last pane on screen brings it back.
+- **Expand vertically** fills the column (the pane above or below is minimized); **Expand horizontally** fills the width (the other column becomes a strip). **Show all panes** and **Reset layout** undo it.
+- **Open in new window** (on a computer) moves the Console, Environment or Plots pane into a window of its own, say on a second screen. It's the same live pane: plots, scrollback and history come with it, and plots are drawn to fit the window. Closing the window, or its restore button, puts the pane back.
+- A minimized pane shows a dot when it has new output (a plot, console output), and running code brings back a minimized console.
+
+The layout, including minimized panes, is remembered. Phones keep their one-pane-at-a-time tabs.
 
 ## Tidyverse support (webR 0.6.1, R 4.6)
 
@@ -219,6 +229,7 @@ npm run test:pwa                # production build: offline start, update banner
 | `notebook.spec.ts` | Quarto chunks inline and in the Output tab, rendering to HTML |
 | `workspace.spec.ts` | Settings, per-workspace tab width, `.Rprofile` (and renv's activation being skipped), zip export/import |
 | `packages.spec.ts` | workspace libraries (links instead of downloads, restarts only when needed), the renv.lock check, writing renv.lock, styler (`@network`) |
+| `layout.spec.ts` | minimizing panes, expanding vertically and horizontally, column strips, panes in their own window |
 | `phone.spec.ts` | the phone layout, outline and search on a phone, the R keyboard typing fast without losing focus |
 | `pwa.spec.ts` | offline start and the update banner, against a production build |
 
@@ -272,6 +283,10 @@ src/
   lib/
     r-session.ts   webR wrapper: console input queue, output/plot/pager/view events
     r-helpers.ts   R helper functions (attached as "tools:ide")
+    r-help.ts      R side of the HTML Help pane (Rd2HTML, package index, vignettes)
+    help.ts        Help pane history and link handling
+    snippets.ts    code snippets (r.snippets format), Tab expansion
+    layout.ts      pane layout: split sizes, minimized panes, panes in their own window
     ide.ts         app state, workspaces, OPFS ⇄ webR file sync, history, autosave
     packages.ts    versioned package cache: capture installs, mount on start, updates
     pkg-index.ts   webR repo index + R-universe search/details (package browser)

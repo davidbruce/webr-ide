@@ -254,7 +254,7 @@ function tokenCss(): string {
   return rules.join('\n');
 }
 
-async function maths(root: HTMLElement) {
+export async function maths(root: HTMLElement) {
   const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {

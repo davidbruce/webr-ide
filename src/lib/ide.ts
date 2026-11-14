@@ -30,6 +30,8 @@ export interface PackageEntry {
 
 export interface EditorApi {
   openFile(path: string, opts?: { grid?: boolean }): Promise<void>;
+  /** A file in the app's own storage (not a workspace), e.g. the snippets. */
+  openAppFile(appPath: string, name: string, text: string): Promise<void>;
   newFile(name?: string, content?: string): void;
   saveActive(): Promise<void>;
   saveAll(): Promise<void>;
@@ -159,11 +161,12 @@ const [state, setState] = createStore({
   selectedPath: '' as string,
   rStatus: 'starting' as 'starting' | 'ready' | 'error' | 'closed',
   rStatusDetail: '',
+  /** R's working directory (getwd()), refreshed whenever R goes idle. */
+  rWd: '',
   busy: true,
   env: [] as EnvEntry[],
   history: [] as string[],
   packages: [] as PackageEntry[],
-  help: null as null | { title: string; text: string },
   envTab: 'environment' as 'environment' | 'history',
   plotTab: 'plots' as 'plots' | 'output' | 'preview' | 'packages' | 'help',
   zoomed: null as PaneId | null,
@@ -201,9 +204,19 @@ export function withoutPaneSwitch(fn: () => void) {
   }
 }
 
-/** On phones, bring a pane on screen (no-op on larger screens). */
+/** Desktop layout hooks (layout.ts): bring back a minimized pane; mark new output. */
+let desktopPane: { reveal(p: PaneId): void; output(p: PaneId): void } | null = null;
+export function onDesktopPane(h: typeof desktopPane) {
+  desktopPane = h;
+}
+
+/** Bring a pane on screen: on phones its tab; on larger screens, restore it if minimized. */
 export function showPane(tab: PhoneTab) {
-  if (!phone() || stayOnPane) return;
+  if (stayOnPane) return;
+  if (!phone()) {
+    if (tab !== 'files') desktopPane?.reveal(tab);
+    return;
+  }
   // Stacked: the console is on screen with the script.
   if (stacked() && tab === 'console') tab = 'script';
   batch(() => {
@@ -215,6 +228,7 @@ export function showPane(tab: PhoneTab) {
 // Only output that follows something the user ran counts (not R's banner).
 let badgesArmed = false;
 function badge(tab: 'console' | 'plots') {
+  if (badgesArmed && !phone()) desktopPane?.output(tab);
   const visible = state.phoneTab === tab || (tab === 'console' && stacked() && state.phoneTab === 'script');
   if (badgesArmed && phone() && !visible && !state.phoneBadges[tab]) setState('phoneBadges', tab, true);
 }
@@ -293,13 +307,6 @@ session.on((ev) => {
     case 'canvasNewPage':
       badge('plots');
       break;
-    case 'pager':
-      batch(() => {
-        setState('help', { title: ev.title, text: ev.text });
-        setState('plotTab', 'help');
-      });
-      showPane('plots');
-      break;
     case 'view':
       setView({ title: ev.title, data: ev.data });
       break;
@@ -311,6 +318,7 @@ function onIdle() {
   clearTimeout(idleTimer);
   idleTimer = window.setTimeout(async () => {
     if (!session.idle) return;
+    await refreshWd();
     await refreshEnv();
     await syncFromR();
     await cacheNewPackages();
@@ -356,6 +364,27 @@ function scheduleAutosave() {
 }
 
 // ---------------------------------------------------------------- environment / packages
+
+export async function refreshWd() {
+  if (session.status !== 'ready') return;
+  try {
+    const [wd] = await session.strings('getwd()');
+    if (wd !== undefined && wd !== state.rWd) setState('rWd', wd);
+  } catch {
+    /* keep the last one */
+  }
+}
+
+/** R's working directory as shown in the console header: ~ for R's home. */
+export function wdDisplay(wd = state.rWd): string {
+  return wd === HOME ? '~' : wd.startsWith(HOME + '/') ? `~${wd.slice(HOME.length)}` : wd;
+}
+
+/** The working directory is inside the open workspace (files there are saved). */
+export function wdInWorkspace(wd = state.rWd): boolean {
+  const root = rRoot();
+  return wd === root || wd.startsWith(root + '/');
+}
 
 export async function refreshEnv() {
   if (session.status !== 'ready') return;
@@ -934,6 +963,7 @@ export async function attachWorkspaceToR(restoreImage: boolean) {
     if (restored === 'restored') toast('Restored environment from .RData');
     if (state.debugOnError) await session.evalVoid('.ide_debug_on_error(TRUE)').catch(() => {});
     runRprofile();
+    await refreshWd();
     await refreshEnv();
     savedEnvSig = envSignature();
     void checkRenv({ auto: true });
@@ -1122,12 +1152,12 @@ export async function switchWorkspace(ws: string, opts: { saveImage?: boolean } 
     setState('switching', false);
   }
   scheduleIdeStateSave();
-  // A different package library: relink, or restart R if loaded packages differ.
-  if (session.status === 'ready' && !(await useLibrary(wsConfig.library))) {
-    await restartSession({ switching: true });
-  } else {
-    await attachWorkspaceToR(true);
-  }
+  // A fresh R for the new workspace (as RStudio does when it opens another
+  // project): nothing carries over, not attached packages or data, options(),
+  // environment variables or traced functions. The restart also applies the
+  // workspace's package library and restores its .RData.
+  if (session.status === 'ready') await restartSession({ switching: true });
+  else await attachWorkspaceToR(true);
   await refreshWorkspaces();
 }
 

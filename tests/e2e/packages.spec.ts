@@ -11,7 +11,7 @@ async function install(page: import('@playwright/test').Page, pkg: string) {
 
 const linked = (page: import('@playwright/test').Page) => R(page, 'paste(sort(list.files("/webr-ide/library")), collapse = ",")').then((r) => r[0]);
 
-test('@network a workspace library links cached packages without downloading, and switches restart only when needed', async ({ page }) => {
+test('@network a workspace library links cached packages without downloading, and each workspace gets its own library on switching', async ({ page }) => {
   const starts: number[] = [];
   page.on('console', (m) => /mounted \d+ cached packages/.test(m.text()) && starts.push(Date.now()));
   await openApp(page);
@@ -32,14 +32,14 @@ test('@network a workspace library links cached packages without downloading, an
   expect(JSON.parse(await readFile(page, 'Own', '.ide/library.json'))).toEqual({ mode: 'workspace', packages: { R6: expect.any(String) } });
   await R(page, '{library(R6); "1"}');
 
-  // To the shared library: R6 is loaded at the same version, so no restart.
+  // Switching starts a fresh R, with the shared library.
   let before = starts.length;
   await page.evaluate((w) => window.__webrIde.ide.switchWorkspace(w), shared);
   await waitReady(page);
-  expect(starts.length).toBe(before);
+  expect(starts.length).toBe(before + 1);
   expect(await linked(page)).toBe('DBI,R6');
 
-  // DBI is loaded but not in Own's library: switching back restarts R.
+  // And back to Own's library (DBI isn't in it).
   await R(page, '{loadNamespace("DBI"); "1"}');
   before = starts.length;
   await page.evaluate(() => window.__webrIde.ide.switchWorkspace('Own'));

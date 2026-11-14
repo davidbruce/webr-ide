@@ -11,6 +11,8 @@ import { Icon } from './Icon';
 import { PaneHeader } from './Pane';
 import { OutputPane } from './Notebook';
 import { PreviewPane } from './Preview';
+import { HelpPane } from './HelpPane';
+import { openHelpIndex } from '../lib/help';
 
 // ---------------------------------------------------------------- plot history
 
@@ -124,6 +126,8 @@ function PlotNav() {
 // ---------------------------------------------------------------- pane
 
 export function PlotsPane() {
+  // Another workspace: its own plots (R restarts too).
+  createEffect(on(() => state.workspace, (ws, prev) => prev && ws !== prev && clearPlots(), { defer: true }));
   return (
     <div class="pane">
       <PaneHeader
@@ -151,7 +155,7 @@ export function PlotsPane() {
         <PackagesView />
       </Show>
       <Show when={state.plotTab === 'help'}>
-        <HelpView />
+        <HelpPane />
       </Show>
       <PlotFullscreen />
     </div>
@@ -346,7 +350,7 @@ function PackagesView() {
           />
         </td>
         <td class="pkg-name">
-          <button class="link" onClick={() => session.submit(`help(package = "${p.name}")`)}>
+          <button class="link" onClick={() => void openHelpIndex(p.name)}>
             {p.name}
           </button>
         </td>
@@ -489,41 +493,3 @@ function PackagesView() {
   );
 }
 
-// ---------------------------------------------------------------- help
-
-function HelpView() {
-  const [topic, setTopic] = createSignal('');
-  function search(e: Event) {
-    e.preventDefault();
-    const t = topic().trim();
-    if (!t) return;
-    session.submit(`help(${rString(t)})`);
-  }
-  return (
-    <>
-      <div class="pane-toolbar">
-        <form class="install-form" onSubmit={search}>
-          <div class="search-box">
-            <Icon name="search" size={13} />
-            <input
-              type="search"
-              placeholder="Help topic, e.g. lm"
-              value={topic()}
-              onInput={(e) => setTopic(e.currentTarget.value)}
-              autocapitalize="off"
-              autocorrect="off"
-              spellcheck={false}
-            />
-          </div>
-        </form>
-        <span class="tb-spacer" />
-        <span class="help-title">{state.help?.title}</span>
-      </div>
-      <div class="pane-body scroll">
-        <Show when={state.help} fallback={<div class="empty-note">Search for a topic, or run ?topic in the console</div>}>
-          <pre class="help-text">{state.help!.text}</pre>
-        </Show>
-      </div>
-    </>
-  );
-}

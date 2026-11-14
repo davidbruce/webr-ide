@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
+import { createEffect, createSignal, For, JSX, on, onCleanup, Show } from 'solid-js';
 import { state, setState, editor, phone, showPane, stacked, PhoneTab } from '../lib/ide';
 import { Icon } from './Icon';
 import { KeyBar, DebugKeys, keyBarTarget, keyboardUp } from './KeyBar';
@@ -9,37 +9,56 @@ import { ConsolePane } from './Console';
 import { EnvPane } from './EnvPane';
 import { PlotsPane } from './PlotsPane';
 import { Sidebar } from './Sidebar';
+import {
+  sizes,
+  setSizes,
+  DEFAULT_SIZES,
+  panes,
+  columnCollapsed,
+  restorePane,
+  focusPopped,
+  popWindows,
+  PANE_LABEL,
+  PANES,
+} from '../lib/layout';
+import type { PaneId } from '../lib/ide';
 
-// ---------------------------------------------------------------- persisted split sizes
+const PANE_VIEW: Record<PaneId, () => JSX.Element> = {
+  script: () => <EditorPane />,
+  console: () => <ConsolePane />,
+  env: () => <EnvPane />,
+  plots: () => <PlotsPane />,
+};
 
-interface Layout {
-  sidebar: number; // px
-  left: number; // fraction of the quadrant area taken by the left column
-  leftTop: number; // fraction of the left column taken by the script pane
-  rightTop: number; // fraction of the right column taken by environment/history
+/** A column whose panes are all minimized or in their own window: a thin strip. */
+function ColumnStrip(props: { panes: PaneId[]; side: 'left' | 'right' }) {
+  return (
+    <div class="column-strip" classList={{ [props.side]: true }} role="toolbar" aria-label="Minimized panes">
+      <For each={props.panes}>
+        {(p) => (
+          <button
+            class="strip-btn"
+            classList={{ popped: panes.popped[p] }}
+            title={panes.popped[p] ? `${PANE_LABEL[p]} is in its own window` : `Restore ${PANE_LABEL[p]}`}
+            onClick={() => (panes.popped[p] ? focusPopped(p) : restorePane(p))}
+          >
+            <span class="strip-label">{PANE_LABEL[p]}</span>
+            <Show when={panes.badge[p]}>
+              <span class="pane-badge" aria-label="new output" />
+            </Show>
+          </button>
+        )}
+      </For>
+    </div>
+  );
 }
 
-const LS_LAYOUT = 'webr-ide:layout';
-const DEFAULT_LAYOUT: Layout = { sidebar: 220, left: 0.56, leftTop: 0.56, rightTop: 0.42 };
 
-function loadLayout(): Layout {
-  try {
-    return { ...DEFAULT_LAYOUT, ...JSON.parse(localStorage.getItem(LS_LAYOUT) ?? '{}') };
-  } catch {
-    return { ...DEFAULT_LAYOUT };
-  }
-}
 
-const [layout, setLayoutSignal] = createSignal<Layout>(loadLayout());
-function setLayout(patch: Partial<Layout>) {
-  const next = { ...layout(), ...patch };
-  setLayoutSignal(next);
-  localStorage.setItem(LS_LAYOUT, JSON.stringify(next));
-}
-export function resetLayout() {
-  setLayout({ ...DEFAULT_LAYOUT });
-  setState('zoomed', null);
-}
+export { resetLayout } from '../lib/layout';
+const layout = sizes;
+const setLayout = setSizes;
+const DEFAULT_LAYOUT = DEFAULT_SIZES;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -76,7 +95,7 @@ function Gutter(props: { hidden?: boolean; dir: 'col' | 'row'; onDrag: (clientX:
 }
 
 export function Workbench() {
-  let quad!: HTMLDivElement;
+  let quadEl!: HTMLDivElement;
   let leftCol!: HTMLDivElement;
   let rightCol!: HTMLDivElement;
   const [narrow, setNarrow] = createSignal(window.innerWidth <= 1000);
@@ -105,17 +124,53 @@ export function Workbench() {
   const sidebarShown = () => (phone() ? state.phoneTab === 'files' : state.sidebarOpen);
 
   const z = () => state.zoomed;
+  // Minimizing is for larger screens; phones show one pane at a time.
+  const leftCollapsed = () => !phone() && columnCollapsed('left');
+  const rightCollapsed = () => !phone() && columnCollapsed('right');
   const leftVisible = () => !z() || z() === 'script' || z() === 'console';
   const rightVisible = () => (!z() && !codeTab()) || z() === 'env' || z() === 'plots';
+  /** In the grid: not popped out, and (unless maximized) not hidden by a zoom. */
+  const inGrid = (p: PaneId) => !panes.popped[p] && (!z() || z() === p);
+  const minimized = (p: PaneId) => !phone() && !z() && panes.minimized[p];
 
   const colStyle = () => {
     if (z() || codeTab()) return { 'grid-template-columns': '1fr' };
+    if (leftCollapsed() && rightCollapsed()) return { 'grid-template-columns': 'var(--strip-w) var(--strip-w)' };
+    if (leftCollapsed()) return { 'grid-template-columns': 'var(--strip-w) minmax(0, 1fr)' };
+    if (rightCollapsed()) return { 'grid-template-columns': 'minmax(0, 1fr) var(--strip-w)' };
     const l = layout().left;
     return { 'grid-template-columns': `minmax(0, ${l}fr) var(--gutter) minmax(0, ${1 - l}fr)` };
   };
-  const rowStyle = (frac: number, top: 'script' | 'env', bottom: 'console' | 'plots') => {
-    if (z() === top || z() === bottom) return { 'grid-template-rows': 'minmax(0, 1fr)' };
+  const rowStyle = (frac: number, top: PaneId, bottom: PaneId) => {
+    const t = inGrid(top);
+    const b = inGrid(bottom);
+    if (!t || !b) return { 'grid-template-rows': 'minmax(0, 1fr)' };
+    if (minimized(top) && minimized(bottom)) return { 'grid-template-rows': 'auto auto' };
+    if (minimized(top)) return { 'grid-template-rows': 'auto minmax(0, 1fr)' };
+    if (minimized(bottom)) return { 'grid-template-rows': 'minmax(0, 1fr) auto' };
     return { 'grid-template-rows': `minmax(0, ${frac}fr) var(--gutter) minmax(0, ${1 - frac}fr)` };
+  };
+  const rowGutterHidden = (top: PaneId, bottom: PaneId) => !inGrid(top) || !inGrid(bottom) || minimized(top) || minimized(bottom);
+  // A pane in its own window is the same live pane, moved there (so the
+  // console keeps its scrollback, the plots their history, and so on).
+  const quad = (p: PaneId) => {
+    let section!: HTMLElement;
+    let host!: HTMLDivElement;
+    createEffect(() => {
+      const w = popWindows()[p];
+      const target = (w && !w.closed && w.document.querySelector('.popout-root')) || section;
+      if (host.parentNode !== target) {
+        target.append(host);
+        queueMicrotask(() => editor()?.layout());
+      }
+    });
+    return (
+      <section ref={section} class="quadrant" classList={{ hidden: !inGrid(p), minimized: minimized(p) }} aria-label={p === 'script' ? 'Source' : PANE_LABEL[p]}>
+        <div ref={host} class="pane-host">
+          {PANE_VIEW[p]()}
+        </div>
+      </section>
+    );
   };
 
   return (
@@ -137,14 +192,15 @@ export function Workbench() {
       )}
       {state.sidebarOpen && narrow() && !phone() && <div class="sidebar-scrim" onClick={() => setState('sidebarOpen', false)} />}
 
-      <div class="quadrants" ref={quad} style={colStyle()}>
-        <div class="column" ref={leftCol} style={rowStyle(layout().leftTop, 'script', 'console')} classList={{ hidden: !leftVisible() }}>
-          <section class="quadrant" classList={{ hidden: z() === 'console' }} aria-label="Source">
-            <EditorPane />
-          </section>
+      <div class="quadrants" ref={quadEl} style={colStyle()}>
+        <Show when={!z() && !codeTab() && leftCollapsed()}>
+          <ColumnStrip panes={['script', 'console']} side="left" />
+        </Show>
+        <div class="column" ref={leftCol} style={rowStyle(layout().leftTop, 'script', 'console')} classList={{ hidden: !leftVisible() || (!z() && leftCollapsed()) }}>
+          {quad('script')}
           <Gutter
             dir="row"
-            hidden={!!z()}
+            hidden={rowGutterHidden('script', 'console')}
             label="Resize script and console"
             onDrag={(_, y) => {
               const r = leftCol.getBoundingClientRect();
@@ -152,27 +208,23 @@ export function Workbench() {
             }}
             onReset={() => setLayout({ leftTop: DEFAULT_LAYOUT.leftTop })}
           />
-          <section class="quadrant" classList={{ hidden: z() === 'script' }} aria-label="Console">
-            <ConsolePane />
-          </section>
+          {quad('console')}
         </div>
         <Gutter
           dir="col"
-          hidden={!!z() || codeTab()}
+          hidden={!!z() || codeTab() || leftCollapsed() || rightCollapsed()}
           label="Resize columns"
           onDrag={(x) => {
-            const r = quad.getBoundingClientRect();
+            const r = quadEl.getBoundingClientRect();
             setLayout({ left: clamp((x - r.left) / r.width, 0.2, 0.8) });
           }}
           onReset={() => setLayout({ left: DEFAULT_LAYOUT.left })}
         />
-        <div class="column" ref={rightCol} style={rowStyle(layout().rightTop, 'env', 'plots')} classList={{ hidden: !rightVisible() }}>
-          <section class="quadrant" classList={{ hidden: z() === 'plots' }} aria-label="Environment">
-            <EnvPane />
-          </section>
+        <div class="column" ref={rightCol} style={rowStyle(layout().rightTop, 'env', 'plots')} classList={{ hidden: !rightVisible() || (!z() && rightCollapsed()) }}>
+          {quad('env')}
           <Gutter
             dir="row"
-            hidden={!!z()}
+            hidden={rowGutterHidden('env', 'plots')}
             label="Resize environment and plots"
             onDrag={(_, y) => {
               const r = rightCol.getBoundingClientRect();
@@ -180,10 +232,11 @@ export function Workbench() {
             }}
             onReset={() => setLayout({ rightTop: DEFAULT_LAYOUT.rightTop })}
           />
-          <section class="quadrant" classList={{ hidden: z() === 'env' }} aria-label="Plots">
-            <PlotsPane />
-          </section>
+          {quad('plots')}
         </div>
+        <Show when={!z() && !codeTab() && rightCollapsed()}>
+          <ColumnStrip panes={['env', 'plots']} side="right" />
+        </Show>
       </div>
     </div>
   );

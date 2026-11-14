@@ -6,6 +6,7 @@ import { setThemePref, themePref, type ThemePref } from '../lib/ui';
 import { rKeyboardEnabled, setRKeyboardEnabled } from '../lib/rkeyboard';
 import { wsConfig, setWorkspaceSetting } from '../lib/workspace-config';
 import { setLibraryMode, writeRenvLock } from '../lib/ide';
+import { editSnippets } from '../lib/snippets';
 
 const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
@@ -106,6 +107,18 @@ export function SettingsDialog() {
               </Row>
               <Row label="Help on hover" hint="Usage and a summary when the pointer rests on a function.">
                 <OnOff label="Help on hover" on={settings.hoverHelp} set={flag('hoverHelp')} />
+              </Row>
+
+              <Row label="Code snippets" hint="Type a snippet's name (fun, for, if, lib…) and press Tab. Edit them, or add your own; they're shared by all workspaces.">
+                <button
+                  class="btn small"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    void editSnippets();
+                  }}
+                >
+                  Edit snippets
+                </button>
               </Row>
 
               <h4>Code checks</h4>

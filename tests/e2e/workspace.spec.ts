@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitIdle } from './helpers';
 import { openApp, closeAll, newFile, clickLine, lines, consoleRows, R, waitReady, writeFile, workspace, makeWorkspace } from './helpers';
 
 test.use({ acceptDownloads: true });
@@ -91,4 +92,34 @@ test('a workspace exports to .zip and imports back as a new workspace', async ({
   // Everything that was in the workspace when it was exported.
   expect(await list('Imported')).toEqual(exported);
   expect(await R(page, 'paste(get0("zip_obj", globalenv()), collapse = ",")')).toEqual(['1,2,3']);
+});
+
+test("the console header follows R's working directory; switching workspaces starts a fresh R and console", async ({ page }) => {
+  await openApp(page);
+  const ws = await workspace(page);
+  const label = page.locator('.quadrant[aria-label="Console"] .pane-path');
+  await expect(label).toHaveText(`~/${ws}`);
+  await page.evaluate(() => (window as any).__webrIde.session.submit('dir.create("sub"); setwd("sub")'));
+  await expect(label).toHaveText(`~/${ws}/sub`);
+  await expect(label).not.toHaveClass(/outside/);
+  await page.evaluate(() => (window as any).__webrIde.session.submit('setwd(tempdir())'));
+  await expect(label).toHaveClass(/outside/);
+  await page.evaluate(() => (window as any).__webrIde.session.submit('cat("old output\\n")'));
+  await expect.poll(async () => (await consoleRows(page)).join('\n')).toContain('old output');
+
+  // Session state that would leak into another workspace without a restart.
+  await page.evaluate(() =>
+    (window as any).__webrIde.session.submit('library(splines); attach(list(attached_z = 1), name = "mydata"); options(digits = 3); Sys.setenv(LEAK = "A"); plot(1:3)'),
+  );
+  await waitIdle(page);
+  await expect(page.locator('.plot-canvas')).toHaveCount(1);
+
+  await makeWorkspace(page, 'Second', { 'a.R': '' });
+  await expect(label).toHaveText('~/Second');
+  const probe = await R(page, 'c(paste(search(), collapse = ","), getOption("digits"), Sys.getenv("LEAK", "unset"), exists("attached_z"))');
+  expect(probe[0]).not.toMatch(/mydata|splines/);
+  expect(probe.slice(1)).toEqual(['7', 'unset', 'FALSE']);
+  await expect(page.locator('.plot-canvas')).toHaveCount(0);
+  await expect.poll(async () => (await consoleRows(page)).join('\n')).toContain('Workspace Second');
+  expect((await consoleRows(page)).join('\n')).not.toContain('old output');
 });
